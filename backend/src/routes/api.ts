@@ -1,7 +1,11 @@
 import { Router } from "express";
 import type { AdminClient } from "../lib/supabase.js";
+import { assessmentRoutes } from "./assessments.js";
+import { onboardingRoutes } from "./onboarding.js";
 export function apiRoutes(client: AdminClient) {
   const router = Router();
+  router.use("/onboarding", onboardingRoutes(client));
+  router.use("/assessments", assessmentRoutes(client));
   router.get("/me", async (_req, res) => {
     // Service role bypasses RLS: always derive ownership from verified identity.
     const userId = res.locals.userId as string;

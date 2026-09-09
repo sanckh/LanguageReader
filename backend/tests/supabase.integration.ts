@@ -141,3 +141,126 @@ test("Express verifies real Supabase tokens and scopes service-role database/sto
     }
   }
 });
+test("Express onboarding endpoints create, resume, and guard the assessment", async () => {
+  const config = loadConfig({
+    APP_ENV: "development",
+    SUPABASE_URL: status.API_URL!,
+    SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY!,
+  });
+  const admin = createAdminClient(config);
+  const server = createApp(config, admin).listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const base = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
+  const email = "onboarding-" + randomUUID() + "@example.test";
+  const password = randomUUID() + "Aa9!";
+  const created = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  assert.equal(created.error, null);
+  const authId = created.data.user!.id;
+  const userClient = createClient(config.supabaseUrl, status.ANON_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const signed = await userClient.auth.signInWithPassword({ email, password });
+  assert.equal(signed.error, null);
+  const token = signed.data.session!.access_token;
+  const authorized = { authorization: "Bearer " + token };
+  const call = (method: string) =>
+    fetch(base + "/api/assessments/onboarding", {
+      method,
+      headers: authorized,
+    });
+  const setLanguages = (nativeCode: string, learningCode: string) =>
+    fetch(base + "/api/onboarding/languages", {
+      method: "POST",
+      headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ nativeCode, learningCode }),
+    });
+  try {
+    const optionsResponse = await fetch(base + "/api/onboarding/languages", {
+      headers: authorized,
+    });
+    assert.equal(optionsResponse.status, 200);
+    const onboarding = (await optionsResponse.json()) as {
+      options: { native: { code: string }[]; learning: { code: string }[] };
+      selection: { native: unknown; learning: unknown };
+    };
+    assert.deepEqual(
+      onboarding.options.native.map((l) => l.code),
+      ["en"],
+    );
+    assert.deepEqual(
+      onboarding.options.learning.map((l) => l.code),
+      ["pl"],
+    );
+    assert.equal(onboarding.selection.native, null);
+    assert.equal(onboarding.selection.learning, null);
+
+    // The assessment cannot start before a learning language is chosen.
+    assert.equal((await call("POST")).status, 409);
+    // Reversed roles are rejected.
+    assert.equal((await setLanguages("pl", "en")).status, 400);
+
+    const selected = (await (await setLanguages("en", "pl")).json()) as {
+      native: { code: string };
+      learning: { code: string; name: string };
+    };
+    assert.equal(selected.native.code, "en");
+    assert.equal(selected.learning.code, "pl");
+
+    const before = await call("GET");
+    assert.equal(before.status, 200);
+    assert.deepEqual(await before.json(), {
+      state: "not_started",
+      assessment: null,
+    });
+    const started = (await (await call("POST")).json()) as {
+      state: string;
+      assessment: {
+        id: string;
+        status: string;
+        completedAt: string | null;
+        language: { code: string };
+      };
+    };
+    assert.equal(started.state, "in_progress");
+    assert.equal(started.assessment.status, "in_progress");
+    assert.equal(started.assessment.completedAt, null);
+    assert.equal(started.assessment.language.code, "pl");
+    const resumed = (await (await call("POST")).json()) as {
+      assessment: { id: string };
+    };
+    assert.equal(resumed.assessment.id, started.assessment.id);
+    const after = (await (await call("GET")).json()) as {
+      state: string;
+      assessment: { id: string; language: { code: string } };
+    };
+    assert.equal(after.state, "in_progress");
+    assert.equal(after.assessment.id, started.assessment.id);
+    assert.equal(after.assessment.language.code, "pl");
+    for (const path of [
+      "/api/onboarding/languages",
+      "/api/assessments/onboarding",
+    ]) {
+      for (const method of ["GET", "POST"]) {
+        assert.equal((await fetch(base + path, { method })).status, 401);
+      }
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const profile = await admin
+      .from("user_profile")
+      .select("id")
+      .eq("auth_user_id", authId)
+      .maybeSingle();
+    const profileId = (profile.data as { id: string } | null)?.id;
+    if (profileId) {
+      await admin.from("assessment").delete().eq("user_id", profileId);
+      await admin.from("user_profile").delete().eq("id", profileId);
+    }
+    await admin.auth.admin.deleteUser(authId);
+  }
+});

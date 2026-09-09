@@ -2,6 +2,7 @@ import { AuthProvider } from './src/auth/AuthProvider';
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { OnboardingGate } from './src/assessment/OnboardingGate';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { colors } from './src/theme';
 
@@ -22,7 +23,9 @@ export default function App() {
       <NavigationContainer theme={theme}>
         <StatusBar style="dark" />
         <AuthProvider>
-          <AppNavigator />
+          <OnboardingGate>
+            <AppNavigator />
+          </OnboardingGate>
         </AuthProvider>
       </NavigationContainer>
     </SafeAreaProvider>

@@ -5,3 +5,4 @@
 - Board: https://trello.com/b/4RMUkRvq/language-reader
 - Read `PROJECT_REFERENCE.md` when available for retained product context and user decisions.
 - Canonical local checkout: C:\Programming\LanguageReader. Shared web, Android, and iOS app code lives in frontend/.
+- Supabase: use ONE shared main/production project for now to limit cost (user decision September 9, 2026), superseding card 04 separate-project criteria. Do not provision extra environments. Android and web are current user test targets; retain iOS compatibility.

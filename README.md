@@ -102,3 +102,11 @@ Production publishing is a separate release action after preview testing: use `-
 Local validation: TypeScript, ESLint, formatting, resolved OTA settings for each environment, and rejection of cloud builds without a project ID. Remote preview publication and receipt remain pending an installed preview binary.
 
 References: [EAS Update setup](https://docs.expo.dev/eas-update/getting-started/), [runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/), and [Expo Updates SDK 57](https://docs.expo.dev/versions/v57.0.0/sdk/updates/).
+
+## Card 04: Supabase connection
+
+Corey chose one shared main/production Supabase project to limit cost, superseding the original card's separate-environment requirement. Project ref: xtgwshklnforymmfsokg. Android and web are current test targets; iOS remains supported.
+
+See supabase/README.md for the migration and health-check setup. Add the project URL and sb_publishable_ key to frontend/.env.local. The file is ignored by Git. The same pair will be used in each EAS app environment. The Supabase MCP connection is deliberately read-only, so migrations must be applied through the Supabase SQL editor or a separately authorized write-capable administrative tool.
+
+The client, non-production Account connection diagnostic, SQL migration, and production health seed are implemented. TypeScript, lint, formatting, all-platform bundles, and configuration guards passed. Live SQL execution, project reads, and EAS variables remain pending; this is not a completed remote provisioning claim.

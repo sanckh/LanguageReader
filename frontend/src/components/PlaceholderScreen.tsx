@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme';
 
 type Props = {
+  children?: ReactNode;
   title: string;
   description: string;
   emptyTitle: string;
@@ -13,6 +15,7 @@ export function PlaceholderScreen({
   description,
   emptyTitle,
   emptyDescription,
+  children,
 }: Props) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -29,6 +32,7 @@ export function PlaceholderScreen({
           </Text>
           <Text style={styles.description}>{emptyDescription}</Text>
         </View>
+        {children}
         <Text style={styles.note}>Polish for English-speaking readers</Text>
       </ScrollView>
     </SafeAreaView>

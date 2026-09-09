@@ -22,6 +22,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       throw new Error(name + ' must use HTTPS outside development');
     }
   }
+  const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (Boolean(supabaseUrl) !== Boolean(supabaseKey)) {
+    throw new Error(
+      'Set both Supabase URL and publishable key, or leave both empty',
+    );
+  }
+  if (supabaseKey && !supabaseKey.startsWith('sb_publishable_')) {
+    throw new Error(
+      'Use a Supabase publishable key (sb_publishable_), never a secret or service-role key',
+    );
+  }
   const projectId =
     process.env.EAS_PROJECT_ID || '96f85c75-2a82-40fe-9b75-b51da596b0bb';
   if (

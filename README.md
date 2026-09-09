@@ -2,6 +2,12 @@
 
 A Polish-first reading assistant for English-speaking learners.
 
+## Required platforms
+
+Web, Android, and iOS are first-class targets from the initial release (user requirement, September 9, 2026). Every feature and dependency must support all three, or provide an equivalent platform-specific implementation. Web is a supported product experience, including responsive layout and keyboard interaction.
+
+The shared Expo application currently lives in `mobile/` despite serving all three platforms. Launch targets are `npm run web`, `npm run android`, and `npm run ios` from that directory. `npm start` opens the shared development server; choose the desired platform from its terminal.
+
 ## Current implementation
 
 [Trello card 01](https://trello.com/c/Q5GKZl4f): Expo managed-workflow app with strict TypeScript, typed React Navigation bottom tabs, and placeholder Reader, Library, Learner, and Account screens. Shared styling, safe-area handling, ESLint, and Prettier are included. No backend or account credentials are required.
@@ -34,7 +40,7 @@ npx expo export --platform all
 
 TypeScript, ESLint, formatting, dependency compatibility, and Android/iOS/web production bundle exports passed on September 9, 2026. Bundle export does not establish native simulator runtime behavior. Native launch and interaction checks remain required before marking card 01 fully accepted.
 
-Manual acceptance: launch through `expo start`, switch among all four tabs, verify matching content and selected labels, check Android Back navigation, and confirm readable scrolling with enlarged text and no overlap with system bars on both platforms.
+Manual acceptance: launch through `expo start` on web, Android, and iOS; switch among all four tabs; verify matching content and selected labels; check Android Back navigation; and confirm readable scrolling with enlarged text and no overlap with system bars on native platforms. On web, also verify keyboard navigation and narrow/mobile and wide/desktop viewport layouts. Runtime acceptance remains pending on all three targets; successful bundle exports alone do not establish runtime behavior.
 
 The initial dependency audit reports 16 moderate findings inherited through Expo's `xcode`/`uuid` tooling and React Navigation's `query-string`/`decode-uri-component` chain. No high or critical findings were reported. npm offers no React Navigation fix and suggests an incompatible Expo downgrade for the tooling chain, so no forced downgrade or unverified override was applied. Recheck these upstream advisories before release.
 

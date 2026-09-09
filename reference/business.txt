@@ -1,0 +1,170 @@
+Language Reading Assistant
+Product & Business Overview
+Prepared for: Product & Business Stakeholders
+Companion document: Technical Architecture (separate file)
+Status: Product vision draft
+1. Product Idea
+A mobile-first reading app for language learners that feels more like Kindle than a traditional language-learning app.
+The product helps learners read content in their target language at the right level, understand unfamiliar words and grammar in context, and gradually become less dependent on translation.
+Users can:
+read from a built-in library of free material
+upload their own ebooks and documents
+eventually import articles from the web
+receive personalized difficulty estimates
+tap unfamiliar words for contextual help
+get explanations of grammar and inflection
+receive progressively stronger translation assistance
+build an evolving model of what they actually know
+The initial MVP may support only Polish, but the product is designed from the beginning so additional languages can be added through language-specific modules rather than major changes to the core reader, learner model, or content system.
+Know what I know. Give me the right thing to read. Help me when I get stuck. Learn from how I read. Let me read what I want.
+2. Product Vision
+Most language-learning apps focus on lessons, drills, flashcards, or gamification. This product focuses on something different: actually becoming comfortable reading the language.
+The experience should feel closer to opening Kindle than opening Duolingo. The learner opens the app and immediately sees things they can read, with an existing estimate of their reading ability:
+You should be able to understand approximately 89% of this story.
+The learner begins reading. When they understand something, they keep going. When they get stuck, they tap — and the app provides only as much help as they need. Over time, the system learns more about the learner and becomes better at selecting content they can successfully read.
+The learner is also not limited to the application's catalog. They can bring their own books and documents into the same reading environment.
+3. The Problem
+Language learners can understand grammatical rules and vocabulary in isolation while still struggling significantly with real-world reading. A learner may know grammatical cases, noun and adjective endings, singular and plural forms, present/past/future tense, common vocabulary, and comparative adjectives — yet comprehension still breaks down on a normal sentence.
+For example, a learner might already know that samochód means “car,” but fail to recognize samochodu in the sentence:
+Nie kupiłem nowego samochodu, ponieważ był zbyt drogi.
+The vocabulary itself is not necessarily unknown — the learner simply failed to recognize the inflected form. Traditional translation tools solve the immediate problem by showing the full English sentence, which lets the learner understand it but does little to teach them how to recognize it next time.
+4. Product Philosophy
+A traditional translator tries to: get the learner to the translated meaning as quickly as possible.
+This product tries to: give the learner the minimum amount of help necessary to understand the original language themselves.
+The learner should not be forced to struggle unnecessarily, but translation should also not become the default response to every difficulty. The application should gradually remove the translation crutch.
+Possible positioning lines:
+“Read without translating everything.”
+“Learn to understand your language, not just translate it.”
+“Read your language before you're fluent.”
+5. Mobile-First Experience
+The primary product is a dedicated mobile reading app — not simply a place to paste text. It should feel like a personal reading library designed specifically for someone learning a language.
+The interface prioritizes:
+reading
+discovering content
+continuing books and stories
+importing personal material
+understanding difficulty
+tracking reading ability
+...rather than a traditional language-learning dashboard.
+6. The Reading Experience
+Home Screen
+A possible home experience:
+Continue Reading
+Krótka historia Polski — 82% estimated comprehension, 12 minutes remaining
+Recommended for You
+Dlaczego psy lubią ludzi? — 91% estimated comprehension (Easy)
+Polacy coraz częściej pracują z domu — 84% estimated comprehension (Good challenge)
+Historia zamku w Malborku — 73% estimated comprehension (Difficult)
+Your Library
+Add Your Own Book — EPUB · PDF · TXT. Import a book or document you want to read.
+Your Polish
+1,284 words likely known (+47 this week). Reading level: Developing.
+Daily Reading
+A lightweight 5-minute nudge. The application encourages reading without making the experience feel like completing a lesson.
+Reading Mode vs. Learning Mode
+The application supports two reading experiences on the same material:
+Reading Mode
+Designed for learners who primarily want to enjoy the material. Interactions are fast: tap a word for its meaning, expand for a grammar explanation, select a sentence for a translation, continue reading. The app still learns from the interaction, but interruptions are minimal.
+Learning Mode
+Designed for deliberate practice. The application reveals less automatically — the learner guesses a word before seeing the definition, attempts a sentence translation, receives progressive hints, answers vocabulary checks, identifies grammatical forms, and reviews recurring difficulties.
+7. Understanding What the Learner Knows
+One of the most important parts of the product is understanding what the user actually knows. The system does not simply classify users as A1 / A2 / B1 and stop there — two learners at the same CEFR level may know very different vocabulary. Instead, the app builds an evolving model of the learner, estimating how likely that learner is to recognize a given word while reading. This is far more useful for recommending content than a single language level.
+Vocabulary is not treated as binary (Known / Unknown). Instead, words carry a confidence score built from evidence such as placement assessment answers, vocabulary quiz answers, reading interactions, repeated lookups, successful recall, sentence comprehension, repeated exposure, and user-confirmed knowledge.
+Example progression for the word ponieważ:
+First encountered — confidence: 20%
+Learner looks it up — confidence: 35%
+Encountered again, correct meaning selected — confidence: 75%
+Recognized correctly multiple times — confidence: 95%
+The system deliberately avoids assuming that simply reading past a word without clicking it means the learner knows it — reading behavior is too ambiguous for that on its own. Instead, passively reading past a word contributes a very small amount of evidence, while an explicit correct check contributes much more. This lets reading behavior inform the model without creating false certainty.
+8. Onboarding and the Reading Profile
+New users complete a short adaptive reading assessment (roughly a few minutes) so the recommendation engine has a useful starting point. The goal is not to perfectly measure the learner's ability — it's to seed the model. The assessment becomes progressively harder, and skips easier material if the learner is doing well.
+The assessment produces a Reading Profile rather than a single label, for example:
+General reading level: Developing
+Estimated vocabulary: 1,050–1,250 words
+Strengths: basic present tense, everyday vocabulary, common nouns, basic sentence structures
+Developing: past-tense comprehension, inflected adjective recognition, genitive forms, longer sentences
+This is more useful than simply displaying “A2” — though CEFR can still be shown as supplemental context. Users can also improve the model manually at any time via optional Knowledge Checks organized by level (Starter, Beginner, Developing), which are less about “passing levels” and more about helping the app understand the learner better.
+9. Help When the Learner Gets Stuck
+Word Assistance
+Tapping a word (e.g. samochodu) surfaces its meaning (car), base form (samochód), current form (genitive singular), and a plain-language explanation of why that form appears — in this case, because it is the object of a negated verb, and negated objects take the genitive in Polish.
+This “Why does this word look like that?” explanation is meant to be one of the defining features of the product. Instead of simply showing samochodu = car, the app explains that the learner may already recognize samochód, and that it appears as samochodu here because of a specific grammatical rule. This creates the learning moment: “I already knew this word. I just didn't recognize the form.” This problem occurs constantly in highly inflected languages, and the app explicitly helps learners bridge that gap.
+Related inflected forms map back to one underlying vocabulary item — a learner does not accumulate seven unrelated entries for kobieta just because it appears as kobiety, kobietę, kobietą, kobiecie, kobiet, and kobietom. Instead there is one entry with evidence for which forms the learner recognizes. The same applies to adjective forms and comparison (dobry → lepszy → najlepszy).
+Progressive Sentence Assistance
+When a learner struggles with a full sentence, the app does not necessarily reveal the translation immediately. Assistance escalates in steps:
+Step 1 — Try It Yourself: the learner types their own interpretation
+Step 2 — Evaluation: the app confirms understanding and flags small differences (e.g. article usage)
+Step 3 — Vocabulary Hint: key words are defined individually
+Step 4 — Structure Hint: the sentence is broken into its structural pieces
+Step 5 — Full Translation: the complete translation is shown
+The learner chooses how much help they need, rather than being given the full translation by default.
+10. Content Strategy
+The app provides enough free content that a new user can begin reading immediately, but the product does not depend on building or licensing an enormous proprietary catalog. The broader philosophy: “Read something from us or bring something you actually want to read.” The library is split into two areas:
+Included Library — content provided directly by the application.
+My Library — books, documents, and articles imported privately by the learner.
+Included Library
+The app launches with a modest but useful library of free reading material — public-domain books and short stories, folklore, historical texts, government resources, appropriately licensed open content, original content produced by the application, and learner-oriented graded readings. The goal is not to recreate Amazon's catalog; it's to guarantee that a new user always has something appropriate to read (roughly 15–30 short readings at each of the Starter, Beginner, Developing, and Intermediate levels).
+Graded Reading Created for Learners
+The app can also provide content specifically created for learners — for example a 600-word Beginner piece on a weekend in Kraków, focused on past tense, travel vocabulary, and common adjectives. These readings are clearly identified as learner-oriented rather than authentic published work, and are useful for filling specific gaps in vocabulary level, grammar complexity, topic, and length.
+My Library — Bring Your Own Books
+Users can import their own ebooks and documents (EPUB, PDF, TXT initially) — this is a major part of the product, not an edge case. The promise: “If you have something you want to read in your target language, bring it with you.” Imported material is converted into the same interactive reading experience used for included content, and the upload flow itself stays simple — the user should not need to understand ebook technology or file internals.
+DRM-Protected Ebooks and Private Content
+Some purchased ebooks are protected by Digital Rights Management (DRM) and can only be opened in authorized apps. The product supports standard EPUB/PDF/TXT files, but does not attempt to circumvent, strip, or remove DRM protection. If a file can be read normally, it's imported; if it's protected and can't be parsed, the app shows a plain message explaining that the book can only be opened in an authorized reading application.
+User-imported books remain private: the app does not add them to the public catalog, make them discoverable or searchable by other users, redistribute them, recommend them to other users, or treat them as platform-owned content. The application can require users to confirm they have the right to use the material they upload.
+Analyze My Book / Prepare Me for This Book
+When someone uploads a book, the system can analyze the entire text against their learner model — for example, estimating 67% comprehension for a Polish translation of The Hobbit, with a breakdown of total words, unique vocabulary, and how much is likely known, previously encountered, or likely unfamiliar. The learner can then choose to read anyway or use “Prepare Me for This Book,” a feature that identifies the highest-frequency unfamiliar vocabulary and recurring structures in that specific book and offers short readings, vocabulary checks, and review sessions to raise estimated comprehension before the learner starts. This kind of targeted preparation is far more motivating than studying arbitrary vocabulary lists, because the learner is preparing for something they actually want to read.
+User-Imported Web Content
+Learners can eventually bring web articles into the app — on mobile, via the system Share sheet (“Share → Open in Language Reader”) from Safari, Chrome, Reddit, or a news app, or by pasting a public URL directly. The app extracts the primary article text and converts it into the standard reading interface, reducing one of the major disadvantages of a mobile app versus a browser extension.
+Personalized Recommendations and “Can I Read This?”
+The learner model drives content discovery: rather than labeling something “Beginner Article,” the app can say a piece is “Recommended for You” with 89% of vocabulary likely known, 12 words currently being learned, and 3 recently-encountered grammatical patterns — far more personalized than a CEFR label. Any included or imported text can also be analyzed before the learner starts, showing estimated comprehension, total/known/previously-encountered/unfamiliar word counts, and a difficulty label, for included stories, uploaded ebooks, PDFs, and imported articles alike.
+11. Reading Difficulty
+Difficulty is intended to eventually combine more than raw vocabulary coverage — signals such as sentence length, grammatical complexity, uncommon constructions, verb forms, idioms, word frequency, and density of unfamiliar vocabulary. Over time this becomes increasingly personalized: a sentence full of genitive forms might be easy for one learner and difficult for another.
+12. Session Summary and Personalized Review
+At the end of a reading session, the app can summarize time spent, words read, lookups, new vocabulary encountered, previously-difficult words recognized, and grammar concepts reinforced — and offer a short “Review What Gave Me Trouble” practice session generated entirely from that reading, with no manual flashcard creation required.
+Review emerges naturally from reading: a word the learner repeatedly struggles with (e.g. ponieważ) resurfaces as a quick check, and stops appearing once answered correctly several times. The same idea applies to grammar — if a learner has trouble with genitive singular masculine nouns, the app can pull a few examples directly from material they've already read.
+13. The Core Learning Loop
+Open the app → choose something from the library or open your own book → see whether it matches your reading ability → read → encounter something unfamiliar → request the minimum necessary help → understand the meaning and grammar → continue reading → encounter the concept again later → recognize it with less help → learner model updates → future recommendations and difficulty estimates improve.
+The application continuously improves simply because the learner keeps reading.
+14. Initial Target Language and Expansion Strategy
+The MVP initially supports only Polish for English-speaking learners. This is intentional: supporting one language deeply is a better way to validate the reading experience, learner model, morphology explanations, and personalized difficulty system than spreading the MVP across many languages.
+Future languages could eventually include Russian, Ukrainian, German, Czech, Croatian, and other highly inflected languages. Polish should be treated as the first implementation of the language layer, not as the definition of the product — it's a strong initial test case because reading requires learners to recognize seven grammatical cases, noun inflection, adjective agreement, grammatical gender, verb conjugation, past-tense gender, singular/plural changes, comparative and superlative forms, and irregular forms. That makes the benefit of morphology-aware explanations easy to demonstrate. (See the companion technical document for how the architecture keeps this expansion path open.)
+15. Recommended MVP
+The MVP is a mobile application initially supporting Polish for English-speaking learners. It does not need to be a complete language-learning ecosystem or launch with multiple languages. The first version can focus on six things:
+Onboarding Assessment — estimate the learner's existing vocabulary and basic reading ability.
+Included Reading Library — a modest collection of texts across several difficulty levels so users can begin immediately.
+Personal Book Uploads — EPUB, PDF, and TXT import; content stays private; DRM-protected content is not circumvented.
+Intelligent Word Lookup — meaning, base form, grammatical form, and contextual explanation on tap.
+Sentence Assistance — translation attempt, vocabulary hints, structural hints, and full translation.
+Learner Model — track vocabulary knowledge and update difficulty estimates and recommendations from learner behavior.
+That's enough to test the main product thesis.
+What the MVP Does Not Need
+The first version deliberately excludes: AI conversation practice, full language courses, pronunciation scoring, social feeds, competitive leaderboards, traditional lesson trees, hundreds of grammar lessons, large flashcard systems, tutors, dozens of languages, a browser extension, advanced gamification, commercial ebook licensing deals, DRM removal, and a massive content catalog. These could distract from validating the reading experience.
+16. Browser Extension as a Companion Product
+A browser extension still has value but does not need to be the primary product. Later, it could offer a lightweight “Read in App” action — one click sends an article the learner finds online into their reading library. The mobile app remains where reading happens, where personal books and learner history live, where recommendations are generated, and where vocabulary and progress are tracked. The extension becomes an acquisition and content-import tool rather than the entire experience.
+17. Product Differentiation
+The product is not differentiated because it can translate words — many products already do that. The differentiation comes from combining:
+Personalized Reading Ability — the app models what the learner actually knows.
+Content Selection — the app recommends things appropriate for that specific learner.
+Bring Your Own Content — users aren't trapped inside the app's catalog; they can read books and documents they genuinely care about.
+Morphology-Aware Explanations — the app explains why a word looks different from its base form.
+Progressive Assistance — the learner receives only as much translation help as necessary.
+Passive Personalization — the system improves simply by observing how the learner reads and what they struggle with.
+Reading-First Design — the app feels like a reading product, not a collection of lessons.
+18. The Five Product Pillars
+1. Know What I Know — build an evolving model of the learner's vocabulary and comprehension.
+2. Give Me the Right Thing to Read — recommend texts the learner can realistically understand.
+3. Help Me When I'm Stuck — provide contextual vocabulary, grammar, morphology, hints, and translation.
+4. Learn From How I Read — use every interaction to improve the learner model and future recommendations.
+5. Let Me Read What I Want — provide a useful included library without restricting the learner to it; let them bring books, ebooks, PDFs, documents, and articles into the same personalized reading experience.
+19. Core Hypotheses
+Primary: Language learners will read more and improve comprehension faster when they are given material matched to their actual vocabulary and receive contextual assistance only when they need it.
+Secondary: Learners of inflected languages frequently fail to recognize vocabulary they technically know because the word appears in an unfamiliar grammatical form.
+Third: A personalized reading application can become more useful over time by learning the learner's actual vocabulary rather than relying primarily on broad labels such as A1, A2, or B1.
+Fourth: Learners will find significantly more value in the product when they can use the same learning tools on books and articles they genuinely want to read, rather than being restricted to a predefined curriculum.
+20. Product Identity
+Kindle meets language learning.
+A more complete description: a personalized reading app for language learners. Read from our library or bring your own books and articles. The app learns what you know, tells you what you're ready to read, and gives you exactly as much help as you need when you get stuck.
+The product should not feel like homework. It should feel like: “I opened the app because I wanted to read something — and I happened to get better at the language while doing it.”
+21. Long-Term Vision
+Eventually the app understands enough about the learner to know which words they reliably recognize, which inflected forms cause difficulty, which grammatical concepts they struggle with, what topics they enjoy reading about, which books they want to eventually read, how much difficulty keeps them engaged, how often they need translation, which words repeatedly require assistance, and how their comprehension is changing over time.
+The system can then answer questions like “What should I read next?”, “Am I ready for this book?”, “What do I need to learn before reading this?”, and “Why do I keep getting stuck on these sentences?” — with answers based specifically on that learner.
+Success means the app becomes less necessary while reading becomes easier.

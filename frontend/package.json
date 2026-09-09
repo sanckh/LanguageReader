@@ -3,14 +3,17 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.18.18",
     "@react-navigation/native": "^7.3.18",
     "@supabase/supabase-js": "^2.116.0",
     "expo": "~57.0.21",
     "expo-constants": "~57.0.17",
     "expo-dev-client": "~57.0.18",
+    "expo-linking": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "expo-updates": "~57.0.21",
+    "expo-web-browser": "~57.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
@@ -20,11 +23,13 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
+    "@types/node": "^26.5.0",
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "^57.0.2",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -35,7 +40,8 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "tsx --test tests/*.test.ts"
   },
   "private": true
 }

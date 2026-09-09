@@ -69,7 +69,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...config.android,
       package: 'com.sanckh.languagereader' + suffix,
     },
-    plugins: [...(config.plugins ?? []), 'expo-dev-client'],
+    plugins: [...(config.plugins ?? []), 'expo-dev-client', 'expo-web-browser'],
     // A native dependency/config change produces a new runtime fingerprint.
     runtimeVersion: { policy: 'fingerprint' },
     updates: projectId

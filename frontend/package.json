@@ -1,5 +1,5 @@
 {
-  "name": "language-reader-mobile",
+  "name": "language-reader-frontend",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {

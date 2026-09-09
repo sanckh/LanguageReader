@@ -22,7 +22,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       throw new Error(name + ' must use HTTPS outside development');
     }
   }
-  const projectId = process.env.EAS_PROJECT_ID;
+  const projectId =
+    process.env.EAS_PROJECT_ID || '96f85c75-2a82-40fe-9b75-b51da596b0bb';
   if (
     projectId &&
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -45,7 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         : environment === 'preview'
           ? ' (Preview)'
           : ' (Dev)'),
-    slug: 'language-reader',
+    slug: 'languagereader',
     scheme:
       'language-reader' +
       (environment === 'production' ? '' : '-' + environment),

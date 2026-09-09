@@ -52,7 +52,7 @@ Run EAS commands from `frontend/`. Profiles in `eas.json` are `dev` (development
 
 Copy `frontend/.env.example` to `frontend/.env.local` for local settings. Configure the same public variables separately in each EAS environment: EXPO_PUBLIC_API_URL, EXPO_PUBLIC_SUPABASE_URL, and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY. They are optional while this is a shell with no backend. Preview/production URLs must use HTTPS. These values are embedded in the client: never use Supabase service-role credentials or LLM secrets here. The backend will hold those credentials later.
 
-Link the intended Expo project with `npx eas-cli@latest login` and `npx eas-cli@latest init`. Because app configuration is dynamic, set the resulting project UUID as EAS_PROJECT_ID in your local environment and all three EAS environments. No Expo project or signing credentials have been provisioned by this change.
+Link the intended Expo project with `npx eas-cli@latest login` and `npx eas-cli@latest init`. The confirmed project UUID is the default in app.config.ts. EAS_PROJECT_ID can override it when intentionally targeting another project. The existing app is linked to EAS project 96f85c75-2a82-40fe-9b75-b51da596b0bb (languagereader). Signing credentials and device builds remain pending.
 
 ```sh
 # Build an installable Android development client
@@ -76,7 +76,7 @@ Validated locally: TypeScript, ESLint, and Expo public-config resolution for dev
 
 `expo-updates` is installed. Build profiles map `dev` to the `development` channel, `preview` to `preview`, and `prod` to `production`; `dev-simulator` inherits development. EAS creates the remote channels during builds. Local declarations alone do not establish remote channels or successful delivery.
 
-The update endpoint is derived from EAS_PROJECT_ID. Local unlinked development disables OTA. Cloud builds fail if the project ID is missing, preventing an accidentally unlinked binary. Runtime compatibility uses Expo's fingerprint policy: native dependency or configuration changes require a matching new build. Keep build and update environment variables identical so the runtime fingerprints match.
+The update endpoint uses the confirmed project UUID by default, with an optional EAS_PROJECT_ID override. Runtime compatibility uses Expo's fingerprint policy: native dependency or configuration changes require a matching new build. Keep build and update environment variables identical so the runtime fingerprints match.
 
 Set APP_ENV and EAS_PROJECT_ID as plain-text variables in the matching EAS environments (APP_ENV=preview for preview, APP_ENV=production for production). EAS Update does not inherit the build profile's env block. Public API/Supabase settings must also match the installed build. Before publishing, confirm the intended account with `npx eas-cli@latest whoami` and project with `npx eas-cli@latest project:info`.
 
@@ -99,6 +99,6 @@ Updates are checked on launch and downloaded in the background; the cached/embed
 
 Production publishing is a separate release action after preview testing: use `--channel production --environment production` with matching production config. This card does not publish a production update.
 
-Local validation: TypeScript, ESLint, formatting, resolved OTA settings for each environment, and rejection of cloud builds without a project ID. Remote preview publication and receipt remain pending the intended Expo project and an installed preview binary.
+Local validation: TypeScript, ESLint, formatting, resolved OTA settings for each environment, and rejection of cloud builds without a project ID. Remote preview publication and receipt remain pending an installed preview binary.
 
 References: [EAS Update setup](https://docs.expo.dev/eas-update/getting-started/), [runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/), and [Expo Updates SDK 57](https://docs.expo.dev/versions/v57.0.0/sdk/updates/).

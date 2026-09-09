@@ -43,7 +43,6 @@ jobs:
       - run: npm test
         working-directory: supabase
       - name: Start isolated Supabase and apply migrations
-        id: local_supabase
         run: node supabase/node_modules/supabase/dist/supabase.js start > /dev/null
       - name: Test cross-user database and Storage access through SDK
         run: npm run test:integration
@@ -52,7 +51,7 @@ jobs:
         run: npm run test:integration
         working-directory: backend
       - name: Stop local test services
-        if: always() && (steps.local_supabase.outcome == 'success' || steps.local_supabase.outcome == 'failure')
+        if: always()
         run: node supabase/node_modules/supabase/dist/supabase.js stop
   preview:
     name: Publish preview OTA

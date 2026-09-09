@@ -31,6 +31,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   ) {
     throw new Error('EAS_PROJECT_ID must be an Expo project UUID');
   }
+  if (process.env.EAS_BUILD === 'true' && !projectId) {
+    throw new Error(
+      'EAS_PROJECT_ID is required for native builds with OTA updates',
+    );
+  }
   return {
     ...config,
     name:
@@ -53,6 +58,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       package: 'com.sanckh.languagereader' + suffix,
     },
     plugins: [...(config.plugins ?? []), 'expo-dev-client'],
+    // A native dependency/config change produces a new runtime fingerprint.
+    runtimeVersion: { policy: 'fingerprint' },
+    updates: projectId
+      ? {
+          enabled: true,
+          url: 'https://u.expo.dev/' + projectId,
+          checkAutomatically: 'ON_LOAD',
+          fallbackToCacheTimeout: 0,
+        }
+      : { enabled: false },
     extra: {
       ...config.extra,
       environment,

@@ -28,10 +28,16 @@ jobs:
           cache-dependency-path: |
             frontend/package-lock.json
             supabase/package-lock.json
+            backend/package-lock.json
       - run: npm ci
         working-directory: frontend
       - run: npm ci --ignore-scripts
         working-directory: supabase
+      - run: npm ci
+        working-directory: backend
+      - name: Backend checks
+        run: npm run typecheck && npm run lint && npm run format:check && npm test && npm run build
+        working-directory: backend
       - run: npm run typecheck && npm run lint && npm run format:check && npm test
         working-directory: frontend
       - run: npm test
@@ -41,6 +47,9 @@ jobs:
       - name: Test cross-user database and Storage access through SDK
         run: npm run test:integration
         working-directory: supabase
+      - name: Test Express authentication and user-scoped reads
+        run: npm run test:integration
+        working-directory: backend
       - name: Stop local test services
         if: always()
         run: node supabase/node_modules/supabase/dist/supabase.js stop
@@ -88,4 +97,4 @@ jobs:
       - name: Publish to preview channel
         run: eas update --channel preview --environment preview --platform all --non-interactive --message "Preview ${GITHUB_SHA}"
         working-directory: frontend
-# Express deployment intentionally pending cards 12a-12c; no placeholder success job.
+# Render preview deploys from main after CI checks pass (render.yaml).

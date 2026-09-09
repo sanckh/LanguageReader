@@ -1,6 +1,8 @@
 import 'react-native-url-polyfill/auto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 let client: SupabaseClient | undefined;
 export function getSupabase(): SupabaseClient | null {
@@ -9,12 +11,14 @@ export function getSupabase(): SupabaseClient | null {
   const url = settings?.supabaseUrl as string | undefined;
   const key = settings?.supabasePublishableKey as string | undefined;
   if (!url || !key) return null;
-  // Card 04 is an anonymous connectivity check. Persistent Auth comes in card 05.
+  // Use durable native storage and browser localStorage via the Supabase SDK.
   client = createClient(url, key, {
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
+      persistSession: true,
+      ...(Platform.OS !== 'web' ? { storage: AsyncStorage } : {}),
+      flowType: 'pkce',
+      autoRefreshToken: true,
+      detectSessionInUrl: Platform.OS === 'web',
     },
   });
   return client;

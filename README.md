@@ -110,3 +110,7 @@ Corey chose one shared main/production Supabase project to limit cost, supersedi
 See supabase/README.md for the migration and health-check setup. Add the project URL and sb_publishable_ key to frontend/.env.local. The file is ignored by Git. The same pair will be used in each EAS app environment. The Supabase MCP connection is deliberately read-only, so migrations must be applied through the Supabase SQL editor or a separately authorized write-capable administrative tool.
 
 The client, non-production Account connection diagnostic, SQL migration, and production health seed are implemented. TypeScript, lint, formatting, all-platform bundles, and configuration guards passed. Live SQL execution, project reads, and EAS variables remain pending; this is not a completed remote provisioning claim.
+
+## Card 05: authentication
+
+Email sign-up/sign-in, Google/Apple browser OAuth, persistent sessions, and sign-out are implemented in Account. See [Auth setup and acceptance tests](docs/AUTH_SETUP.md). Google/Apple were disabled in the live project's public Auth settings when checked; they need provider credentials in Supabase, not additional frontend keys. Successful account/provider login and native restart persistence remain pending user testing/configuration.

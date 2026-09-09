@@ -1,0 +1,229 @@
+Language Reading Assistant
+Technical Architecture & Implementation
+Prepared for: Engineering
+Companion document: Product & Business Overview (separate file)
+Proposed stack: React Native (Expo) · EAS · Express · Supabase
+Status: Architecture draft
+1. Purpose and Scope
+This document describes the proposed technical architecture for the Language Reading Assistant: a mobile reading application that estimates what a learner already knows, recommends content at the right difficulty, and provides contextual, morphology-aware assistance while reading. It assumes familiarity with the product goals described in the companion Product & Business Overview document, and focuses on how those goals translate into a system design, data model, and implementation stack.
+The MVP targets a single language (Polish, for English speakers), but the architecture is designed so that language-specific processing can be swapped or extended without rewriting the core application, learner model, or content system.
+2. Technology Stack Overview
+2.1 Mobile Application — React Native + Expo
+The client is a single React Native codebase built and managed through Expo, targeting iOS and Android from one project. Expo's managed workflow is used to minimize native build maintenance while still allowing native modules via config plugins where needed (e.g. the share-sheet extension used for web-article import, and EPUB/PDF parsing libraries that require native code).
+Key responsibilities of the mobile client:
+the reading UI itself (paginated/scrollable text rendering, tap-to-lookup, sentence selection, progressive-hint UI)
+local caching of the currently-open book/article for smooth, low-latency reading, including offline reading of already-downloaded content
+onboarding assessment flow and knowledge-check UI
+library browsing (Included Library and My Library) and book/document import (file picker, share-sheet target)
+lightweight local telemetry buffering (word taps, time-on-page, lookups) before syncing to the backend
+2.2 Build, Release, and Distribution — EAS
+Expo Application Services (EAS) handles builds, submission, and over-the-air updates:
+EAS Build — cloud builds for iOS and Android per environment (development, preview, production), producing installable binaries without requiring local native toolchains for most changes.
+EAS Submit — automates submission to the App Store and Google Play from CI.
+EAS Update — ships JS/asset-only changes (copy fixes, UI tweaks, non-native bug fixes) to installed apps over the air, on a separate release cadence from native binaries, using update channels mapped to app-config environments (dev / preview / production).
+A typical release flow: merge to main → CI triggers an EAS Update publish to the preview channel for internal QA → promote the same JS bundle to production once verified → periodic EAS Build/Submit runs for changes that touch native dependencies or need a new store release (e.g. new permissions for the share-sheet extension).
+2.3 Backend Data Platform — Supabase
+Supabase provides the managed data platform — Postgres, Auth, and Storage — so the team isn't standing up and operating that infrastructure from scratch:
+Postgres — the system of record for users, learner knowledge, content metadata, and reading history (schema in Section 5).
+Auth — email/password and OAuth (Apple/Google, required for App Store review) sign-in, issuing JWTs used both for direct-to-Supabase calls and for requests to the Express API (Section 2.4).
+Row Level Security (RLS) — enforces per-user data isolation directly in Postgres, which is the mechanism behind the product requirement that a learner's imported books and learner-model data are private (see Section 6.4). RLS protects the client's direct Postgres access; Express additionally enforces its own authorization on every request it handles (Section 2.4).
+Storage — holds uploaded EPUB/PDF/TXT files and extracted web-article snapshots, in private per-user buckets/paths governed by storage policies mirroring the RLS rules.
+Realtime — optional; used post-MVP to push updated recommendations or completed-analysis notifications to the client without polling (e.g. “Analyze My Book” finishing asynchronously).
+MVP guidance: the mobile app talks to Supabase directly (Postgres via the client SDK, protected by RLS; Storage for file access) for straightforward CRUD, and calls the Express API for anything that requires server-side logic, third-party calls (LLM, NLP tools), or write access broader than a single row.
+2.4 Custom Logic Layer — Express
+Custom server-side logic runs on a self-hosted Express (Node/TypeScript) API rather than Supabase Edge Functions. Express holds every route that needs more than a straightforward, RLS-protected read or write:
+Authentication middleware — every request verifies the caller's Supabase Auth JWT and extracts the authenticated user id, so Express can apply its own authorization rather than relying on Postgres RLS alone.
+Supabase access via service role — Express connects to Postgres and Storage using a service-role key (server-side only, never shipped to the client), since its routes need to read and write across users in ways RLS wouldn't otherwise permit (e.g. computing recommendations, scoring difficulty).
+Language processing routes — language.analyze and related endpoints (Section 4), backed by Morfeusz 2, plWordNet, and Tatoeba.
+Content ingestion routes — document parsing, web-article extraction, and lexeme-frequency computation (Section 5).
+Scoring and recommendation routes — the confidence-scoring, difficulty-scoring, and recommendation functions (Section 6).
+LLM wrapper routes — thin routes around the LLM provider so API keys stay server-side and never ship in the client.
+Express is deployed per environment (dev/preview/production) to a standard Node hosting target (e.g. Render, Fly.io, Railway, or AWS — the specific provider is an implementation choice, not an architectural one), with CI deploying alongside the mobile app's EAS Update publishes (Section 2.2).
+2.5 Language Processing Tools
+Language-specific processing is isolated behind a language module (Section 3) so it can be replaced per language. The candidate tools for the first (Polish) module, and how each is used, are listed below; the full sourcing notes carried over from product research are in Appendix A.
+Tool / Resource
+Role in the pipeline
+Status for MVP
+Morfeusz 2
+Polish lemmatization and morphological analysis/generation — the core engine behind base-form lookup, inflection recognition, and “why does this word look like that?” explanations.
+Core — required
+PoliMorf
+Raw Polish inflectional dictionary/data backing or supplementing Morfeusz 2's coverage.
+Likely, depending on architecture
+plWordNet / Słowosieć
+Polish meanings and semantic relationships, and Polish–English concept mappings used for dictionary lookups and grouping related senses.
+Core — required
+Tatoeba
+Polish/English example-sentence pairs used to show real usage of a word or form.
+Supporting data
+LLM (contextual)
+Contextual explanations, ambiguity resolution, sentence-level “why this form” narration, and progressive-hint generation where deterministic tools are insufficient.
+Used selectively
+Wiktionary
+Supplementary definitions, forms, and translations.
+Later — licensing needs review
+Stanza / UD
+POS tagging and dependency parsing, if sentence-structure hints need more than Morfeusz output provides.
+Evaluate — check model/data licenses
+3. Language-Agnostic Architecture
+Adding a new language will never be completely effortless — languages differ in grammar, morphology, writing systems, word segmentation, and available NLP tooling. The architectural goal is to contain that complexity behind a consistent interface, not to eliminate it.
+Architecture goal: one reading product + one learner model + one content system + multiple language engines.
+3.1 Language-Agnostic Core
+The core database and application model general linguistic concepts — language, lexeme, surface form, meaning, learner knowledge, grammatical feature — rather than hard-coding Polish-specific tables or fields. The core reader does not assume every language has grammatical cases, gender, articles, verb aspect, or adjective agreement; those are language-specific properties attached through the grammatical-feature model, not schema columns.
+3.2 Language Modules
+Each supported language has its own processing layer behind a common language-module interface. The Polish module wraps Morfeusz 2, PoliMorf, plWordNet, Tatoeba, and Polish-focused LLM prompts. A future German, Spanish, or Russian module could use entirely different resources. The mobile reader never needs to know which tools produced an analysis — it receives a normalized result shape: original word, base form, part of speech, contextual meaning, grammatical features, and learner-knowledge confidence.
+interface LanguageModule {
+  tokenize(text: string): Token[];
+  analyze(token: Token, sentence: Sentence): MorphAnalysis; // lemma, POS, grammatical features
+  gloss(lemma: string, sense?: string): Meaning[];
+  explainForm(token: Token, sentence: Sentence): FormExplanation; // "why this form" narration
+  exampleSentences(lemma: string): ExamplePair[];
+}
+3.3 Shared Product Systems
+The following remain shared across every language:
+mobile reader and reading UX
+ebook, document, and article import
+included and personal libraries
+learner knowledge model and confidence scoring
+reading difficulty and recommendation engine
+assessment framework and answer tracking
+reading history, session summaries, and review system
+accounts, subscriptions, analytics, and other product infrastructure
+3.4 Language-Specific Components
+The following may vary by language and are replaceable without touching shared systems:
+tokenization and word segmentation
+lemmatization and morphological analysis
+dictionary and semantic datasets
+grammar concepts and language-specific rules
+contextual explanation prompts and teaching guidance
+assessment content and difficulty calibration
+language-specific reading sources and graded content
+3.5 Learner Model Across Languages
+The learner model associates knowledge with a (user, language, lexical item) tuple rather than Polish-specific fields, so the same infrastructure can eventually support one user learning multiple languages independently. Difficulty estimates always compare a text against the learner's profile for that text's specific language.
+3.6 Capability-Based Language Support
+Not every language needs every advanced feature on day one. A new language might initially support reading, translation, basic lemmatization, and learner tracking, with deeper morphology or grammar explanations added later — so languages can be introduced incrementally without requiring identical linguistic depth before launch. This is modeled with a per-language capability flag set that the mobile client and the Express API check before offering a given feature (e.g. “form explanation available” vs. not).
+4. Word & Sentence Assistance Pipeline
+This is the pipeline behind tap-to-lookup and sentence assistance, implemented as an Express endpoint (language.analyze) called by the mobile client, backed by the Polish language module.
+4.1 Request Flow
+Client sends the tapped token (or selected sentence), plus surrounding sentence context and a client-cached copy of the text's ID, to the language.analyze Express endpoint.
+The endpoint tokenizes/segments the sentence if not already segmented at ingestion time (Section 5).
+Morfeusz 2 (+ PoliMorf where needed) produces the lemma, part of speech, and grammatical features (case, gender, number, tense, aspect, etc.) for the token in context.
+plWordNet resolves sense(s) and an English gloss for the lemma; Tatoeba supplies example sentence pairs on request.
+A rules layer maps the grammatical features plus sentence syntax (why a case/form was triggered — e.g. negated-object genitive) into a structured explanation; where the deterministic rules are insufficient or ambiguous, the LLM is called with the lemma, features, and sentence context to produce a natural-language explanation.
+The result is normalized to the LanguageModule response shape, merged with the learner's current knowledge confidence for that lexeme, and returned to the client.
+The client renders the lookup card and logs a word_lookup_event, which feeds the learner model (Section 6).
+4.2 Progressive Sentence Assistance
+Sentence-level assistance (Try It Yourself → Evaluation → Vocabulary Hint → Structure Hint → Full Translation) is implemented as a single stateful Express endpoint call per step, so each step can reuse the prior step's analysis rather than recomputing it. Evaluation of the learner's typed interpretation (Step 2) is delegated to the LLM, constrained to compare against a reference translation and flag specific discrepancies rather than free-form grading.
+5. Content Ingestion Pipeline
+Covers Included Library publishing and My Library imports (EPUB/PDF/TXT upload, and web-article import).
+5.1 Upload and Parsing
+Client uploads the raw file to a private Supabase Storage path scoped to the user (my-library/{user_id}/{document_id}/source.*).
+An Express endpoint (or a queued background job, given typical processing time for a full book) parses the file: EPUB via a standard EPUB-parsing library, PDF via text extraction, TXT directly. Structure (chapters, paragraphs) is preserved where the format supports it.
+If the file cannot be parsed as plain readable text (encrypted/DRM-protected), the pipeline stops and the client shows the “We Can't Open This Book” message. The product does not attempt DRM circumvention, so this is a terminal, expected outcome rather than an error to retry.
+Parsed text is segmented into sentences/tokens and run through the language module (Section 4 pipeline, in bulk) to produce per-lexeme frequency counts for the whole document.
+The document's lexeme frequency table is compared against the learner's current knowledge-confidence table to compute the Analyze My Book result (estimated comprehension %, known/previously-encountered/unfamiliar counts) and difficulty label.
+5.2 Web Article Import
+The iOS/Android share-sheet target (an Expo config-plugin-based share extension) or a manual “Add From Link” URL field sends a source URL to an Express endpoint, which fetches the page, extracts the primary article content (readability-style boilerplate stripping), and stores the extracted text through the same pipeline as an uploaded document, tagged with its source URL.
+5.3 Private Content and Row Level Security
+The product requirement that user-imported content stay private, non-discoverable, and non-redistributable is enforced at the database and storage layer, not just in application code:
+documents.owner_id = auth.uid() is required by an RLS policy on the documents table for all select/update/delete operations.
+Storage policies restrict access to a user's my-library/{user_id}/... path to that authenticated user.
+The Included Library content lives in separate tables/buckets that are readable by any authenticated user but writable only by an admin/content role, so there's no code path that can accidentally surface a personal upload to another learner.
+Upload flows require the user to confirm they have the right to use the uploaded material, recorded as a timestamped acknowledgment on the document row.
+6. The Learner Model
+6.1 Knowledge Confidence
+Vocabulary knowledge is stored per (user, language, lexeme) as a confidence score (0–100) plus an evidence trail, rather than a binary known/unknown flag. Example signals and their approximate relative weight in updating confidence:
+placement assessment answer — moderate positive/negative signal, used mainly to seed initial confidence
+vocabulary or knowledge-check answer — moderate signal, higher weight than passive reading
+explicit correct recall (e.g. sentence-assistance evaluation, quick check) — strong positive signal
+repeated lookup of the same lexeme — negative signal (evidence the learner does not yet know it)
+passive exposure (reading past a word without looking it up) — very small positive signal, capped so it cannot alone push confidence into “known”
+Example table of stored confidence values for a sample of lexemes:
+Word
+Knowledge Confidence
+mam
+98%
+samochód
+93%
+ponieważ
+72%
+niezwykły
+18%
+Confidence updates are computed by a scoring function (an Express endpoint or a Postgres function triggered on new events) that takes the current confidence, the new evidence type, and a decay/recency factor, and writes a new confidence value plus an appended evidence-log row — never overwriting history, so the trail ("20% → 35% → 75% → 95%") stays auditable and can be re-computed if the scoring model changes.
+6.2 Reading Difficulty & Recommendation Engine
+Implemented as an Express endpoint / scheduled job that scores a text against a learner's current knowledge table. MVP scoring is primarily vocabulary-coverage based (percent of lexemes at or above a confidence threshold); the signals described in the business document (sentence length, grammatical complexity, uncommon constructions, verb forms, idioms, word frequency) are added incrementally as additional weighted inputs once the vocabulary-only version is validated. Recommendations are produced by ranking Included Library items (and previously-analyzed My Library items) by a target comprehension band (e.g. 80–92%) rather than a fixed difficulty tier.
+6.3 Session Summaries and Review
+Reading events (word_lookup_event, sentence_assistance_event, page/scroll progress) are buffered on-device and flushed to Postgres periodically and at session end. A session-summary job aggregates these into a reading_session row (time spent, words read, lookups, new vocabulary, previously-difficult words re-recognized, grammar concepts touched) and seeds a review_item queue — words/patterns the learner struggled with — that powers the personalized review feature and spaced-repetition-style resurfacing, without any manual flashcard authoring.
+6.4 Privacy and Data Isolation
+Because the learner model is effectively a detailed profile of what a specific person knows, all learner-model tables (knowledge_confidence, evidence_log, reading_session, review_item) carry the same owner_id-based RLS policy described in Section 5.3, so a learner's data is never queryable by another user's session.
+7. Data Model (Core Entities)
+A simplified sketch of the core Postgres schema. Types are illustrative; exact column types/constraints would be refined during implementation.
+language(id, code, name, capabilities jsonb)
+lexeme(id, language_id, lemma, part_of_speech)
+surface_form(id, lexeme_id, form_text, grammatical_features jsonb)
+meaning(id, lexeme_id, gloss, source)              -- plWordNet / Wiktionary / LLM-assisted
+example_sentence(id, lexeme_id, source_lang_text, target_lang_text, source) -- Tatoeba, etc.
+ 
+user_profile(id, auth_user_id, created_at)
+knowledge_confidence(id, user_id, language_id, lexeme_id, confidence, updated_at)
+evidence_log(id, knowledge_confidence_id, event_type, delta, created_at)
+ 
+document(id, owner_id nullable, language_id, source_type, title, is_included_library bool, status)
+document_lexeme_freq(document_id, lexeme_id, frequency)
+reading_session(id, user_id, document_id, started_at, ended_at, words_read, lookups)
+word_lookup_event(id, user_id, document_id, lexeme_id, surface_form_id, sentence_context, created_at)
+sentence_assistance_event(id, user_id, document_id, sentence_text, step_reached, created_at)
+review_item(id, user_id, lexeme_id, due_at, strength)
+ 
+assessment(id, user_id, language_id, status, completed_at)
+assessment_response(id, assessment_id, item_id, correct bool, difficulty_at_time)
+owner_id on document is nullable because Included Library items are owned by the platform (admin/content role) rather than an individual user; My Library documents always have an owner_id and are subject to the RLS policy in Section 5.3.
+8. Mobile App Architecture
+8.1 Structure
+A single Expo/React Native app with roughly these top-level areas:
+Reader — the core reading surface: text rendering, tap/select gesture handling, lookup card, progressive-assistance UI, reading-mode vs. learning-mode toggle
+Library — Included Library browsing, My Library management, upload/import flows (file picker + share-sheet extension), Analyze My Book / Prepare Me for This Book screens
+Learner — onboarding assessment, reading profile, knowledge checks, session summaries, review queue
+Account — auth (Supabase Auth), settings, subscription state (post-MVP)
+State/data access uses the Supabase JS client directly for straightforward reads/writes (protected by RLS) and a thin API layer for Express endpoint calls (language.analyze, document ingestion, recommendation queries). A local cache (e.g. a lightweight on-device store) holds the currently-open document's parsed content and recent lookup results so reading remains smooth on flaky connections; write events queue locally and flush opportunistically.
+8.2 Offline Behavior
+A learner should be able to keep reading an already-opened book without connectivity. Word/sentence assistance for content already looked up in that session can be served from a local response cache; assistance for not-yet-seen words requires connectivity to reach the language.analyze endpoint. Reading events queue on-device and sync once a connection is available.
+9. Backend Architecture (Supabase and Express)
+9.1 Auth
+Supabase Auth issues JWTs used both by the client's direct Postgres access and as the identity passed to the Express API. Sign-in supports email/password plus Apple and Google OAuth (Apple Sign-In is required by App Store guidelines for apps offering third-party social login).
+9.2 Database & RLS
+Postgres holds all structured data (Section 7). Every user-owned table has an RLS policy scoped to auth.uid(); Included Library / admin-owned data uses a separate policy allowing read access to any authenticated user and write access only to a service role used by the content pipeline.
+9.3 Storage
+Two logical areas: a private per-user bucket path for My Library source files and extracted text, and an admin-managed bucket for Included Library assets. Storage policies mirror the RLS rules on the corresponding database rows.
+9.4 The Express API
+The self-hosted Express (Node/TypeScript) API implements everything that needs server-side execution: language.analyze (word/sentence assistance, Section 4), ingest.document (parsing pipeline, Section 5), score.difficulty / recommend.content (Section 6.2), and thin wrappers around the LLM provider so API keys never ship in the client. As a standard Node process rather than a Deno edge runtime, Express can bind native modules or shell out to local tooling more directly — routes that call Morfeusz 2/PoliMorf-based tooling can load a native or FFI binding directly, shell out to a small dedicated NLP microservice, or call a hosted equivalent, whichever proves simplest; this is an implementation detail to validate early, since Morfeusz 2 is a native library rather than a JS package.
+9.5 Realtime (Post-MVP)
+Supabase Realtime can push a notification when an asynchronous “Analyze My Book” job finishes, or when a recommendation refresh completes, so the client doesn't need to poll. Not required for MVP, where synchronous processing of shorter documents and periodic refresh of recommendations is sufficient.
+10. Technical Non-Goals for the MVP
+Mirroring the product scope, the MVP architecture deliberately does not build: multi-language support beyond Polish, a separate microservices split beyond the single Express API, a browser extension, offline support for content the learner hasn't already opened, DRM circumvention of any kind, or a custom spaced-repetition/flashcard subsystem separate from the review-item mechanism described in Section 6.3.
+Appendix A. Candidate Resources for the Polish Language Module
+These resources are candidates for the first Polish implementation of the language layer. They should not become dependencies of the shared product architecture (Section 3) — future languages may use different analyzers, lexicons, corpora, or NLP services.
+Resource
+What it gives you
+Would I use it?
+Morfeusz 2
+Polish lemmatization, morphology, inflection analysis/generation
+Yes — core
+PoliMorf
+Raw Polish inflectional dictionary/data
+Probably, depending on architecture
+plWordNet / Słowosieć
+Polish meanings, semantic relationships, Polish-English concept mappings
+Yes — core
+Tatoeba
+Polish/English example sentence pairs
+Yes — supporting data
+LLM
+Context, explanations, ambiguity resolution
+Yes — selectively
+Wiktionary
+Definitions, forms, translations
+Maybe later; licensing is messier
+Stanza/UD
+POS/dependency parsing
+Maybe; check model-data licenses carefully

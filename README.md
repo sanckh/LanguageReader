@@ -45,3 +45,29 @@ Manual acceptance: launch through `expo start` on web, Android, and iOS; switch 
 The initial dependency audit reports 16 moderate findings inherited through Expo's `xcode`/`uuid` tooling and React Navigation's `query-string`/`decode-uri-component` chain. No high or critical findings were reported. npm offers no React Navigation fix and suggests an incompatible Expo downgrade for the tooling chain, so no forced downgrade or unverified override was applied. Recheck these upstream advisories before release.
 
 Stack reference: [Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/) and [React Navigation setup](https://reactnavigation.org/docs/getting-started/).
+
+## Card 02: environment and build setup
+
+Run EAS commands from `frontend/`. Profiles in `eas.json` are `dev` (development client, internal distribution), `preview` (internal release build), `prod` (store build), and `dev-simulator` (iOS simulator). Each profile explicitly selects its matching EAS environment and APP_ENV. Native identifiers use `com.sanckh.languagereader` with `.development` or `.preview` suffixes so installations can coexist. Confirm this identifier namespace before the first store submission.
+
+Copy `frontend/.env.example` to `frontend/.env.local` for local settings. Configure the same public variables separately in each EAS environment: EXPO_PUBLIC_API_URL, EXPO_PUBLIC_SUPABASE_URL, and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY. They are optional while this is a shell with no backend. Preview/production URLs must use HTTPS. These values are embedded in the client: never use Supabase service-role credentials or LLM secrets here. The backend will hold those credentials later.
+
+Link the intended Expo project with `npx eas-cli@latest login` and `npx eas-cli@latest init`. Because app configuration is dynamic, set the resulting project UUID as EAS_PROJECT_ID in your local environment and all three EAS environments. No Expo project or signing credentials have been provisioned by this change.
+
+```sh
+# Build an installable Android development client
+npx eas-cli@latest build --platform android --profile dev
+# Build for a registered physical iPhone
+npx eas-cli@latest build --platform ios --profile dev
+# After installation, serve JavaScript to the development client
+npx expo start --dev-client
+# Internal QA and store builds
+npx eas-cli@latest build --platform all --profile preview
+npx eas-cli@latest build --platform all --profile prod
+```
+
+Physical iOS builds need Apple signing and device registration. Install the build from the EAS result link, connect the device to Metro, then verify all four tabs and the environment-specific app name. EAS build execution and physical-device installation remain pending account/project setup and access to a test device.
+
+Web uses the same app config and public settings. Set APP_ENV to development, preview, or production before `npm run web` or `npx expo export --platform web`. EAS native build profiles do not themselves build or host the website. On PowerShell, set the variant with `$env:APP_ENV = 'preview'`; on POSIX shells use `APP_ENV=preview npx expo export --platform web`.
+
+Validated locally: TypeScript, ESLint, and Expo public-config resolution for development, preview, and production. Build profiles follow the [EAS configuration documentation](https://docs.expo.dev/build/eas-json/); environment handling follows [EAS environment variables](https://docs.expo.dev/eas/environment-variables/).

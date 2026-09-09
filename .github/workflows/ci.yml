@@ -1,0 +1,92 @@
+name: Language Reader CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: language-reader-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      SUPABASE_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            supabase/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm ci --ignore-scripts
+        working-directory: supabase
+      - run: npm run typecheck && npm run lint && npm run format:check && npm test
+        working-directory: frontend
+      - run: npm test
+        working-directory: supabase
+      - name: Start isolated Supabase and apply migrations
+        id: local_supabase
+        run: node supabase/node_modules/supabase/dist/supabase.js start > /dev/null
+      - name: Test cross-user database and Storage access through SDK
+        run: npm run test:integration
+        working-directory: supabase
+      - name: Stop local test services
+        if: always() && (steps.local_supabase.outcome == 'success' || steps.local_supabase.outcome == 'failure')
+        run: node supabase/node_modules/supabase/dist/supabase.js stop
+  preview:
+    name: Publish preview OTA
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: preview
+    env:
+      APP_ENV: preview
+      EAS_PROJECT_ID: 96f85c75-2a82-40fe-9b75-b51da596b0bb
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Require Expo credentials
+        run: test -n "$EXPO_TOKEN" || { echo "Configure EXPO_TOKEN in the preview GitHub environment."; exit 1; }
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: '23.2.0'
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+        working-directory: frontend
+      - name: Load matching EAS preview configuration
+        run: eas env:pull --environment preview --path .env.local --non-interactive
+        working-directory: frontend
+      - name: Validate preview configuration
+        working-directory: frontend
+        run: |
+          env -u APP_ENV -u EAS_PROJECT_ID node --env-file=.env.local -e '
+            const e = process.env;
+            if (e.APP_ENV !== "preview") throw Error("APP_ENV must be preview");
+            if (e.EAS_PROJECT_ID !== "96f85c75-2a82-40fe-9b75-b51da596b0bb") throw Error("Unexpected Expo project");
+            if (!e.EXPO_PUBLIC_SUPABASE_URL || !e.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.startsWith("sb_publishable_")) throw Error("Missing public Supabase configuration");
+            if (new URL(e.EXPO_PUBLIC_SUPABASE_URL).protocol !== "https:") throw Error("Supabase URL must use HTTPS");
+          '
+      - name: Publish to preview channel
+        run: eas update --channel preview --environment preview --platform all --non-interactive --message "Preview ${GITHUB_SHA}"
+        working-directory: frontend
+# Express deployment intentionally pending cards 12a-12c; no placeholder success job.

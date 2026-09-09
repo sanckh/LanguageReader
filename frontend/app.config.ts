@@ -22,7 +22,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       throw new Error(name + ' must use HTTPS outside development');
     }
   }
-  const projectId = process.env.EAS_PROJECT_ID;
+  const projectId =
+    process.env.EAS_PROJECT_ID || '96f85c75-2a82-40fe-9b75-b51da596b0bb';
   if (
     projectId &&
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -30,6 +31,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     )
   ) {
     throw new Error('EAS_PROJECT_ID must be an Expo project UUID');
+  }
+  if (process.env.EAS_BUILD === 'true' && !projectId) {
+    throw new Error(
+      'EAS_PROJECT_ID is required for native builds with OTA updates',
+    );
   }
   return {
     ...config,
@@ -40,7 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         : environment === 'preview'
           ? ' (Preview)'
           : ' (Dev)'),
-    slug: 'language-reader',
+    slug: 'languagereader',
     scheme:
       'language-reader' +
       (environment === 'production' ? '' : '-' + environment),
@@ -53,6 +59,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       package: 'com.sanckh.languagereader' + suffix,
     },
     plugins: [...(config.plugins ?? []), 'expo-dev-client'],
+    // A native dependency/config change produces a new runtime fingerprint.
+    runtimeVersion: { policy: 'fingerprint' },
+    updates: projectId
+      ? {
+          enabled: true,
+          url: 'https://u.expo.dev/' + projectId,
+          checkAutomatically: 'ON_LOAD',
+          fallbackToCacheTimeout: 0,
+        }
+      : { enabled: false },
     extra: {
       ...config.extra,
       environment,

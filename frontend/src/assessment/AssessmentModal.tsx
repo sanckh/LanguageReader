@@ -198,7 +198,9 @@ export function AssessmentModal({
                       ? styles.optionCorrect
                       : answeredThis && isSelected
                         ? styles.optionWrong
-                        : null;
+                        : isSelected
+                          ? styles.optionPending
+                          : null;
                   return (
                     <Pressable
                       key={option.key}
@@ -275,6 +277,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 18,
   },
+  optionPending: { borderColor: colors.accent, backgroundColor: '#FFFFFF' },
   optionCorrect: { borderColor: colors.accent, backgroundColor: '#E7F0EA' },
   optionWrong: { borderColor: '#B4443A', backgroundColor: '#F6E4E1' },
   optionText: { color: colors.ink, fontSize: 17, fontWeight: '500' },

@@ -28,7 +28,11 @@ function parseItem(raw: unknown, index: number): PackItem {
     fail(`item ${index} is not an object`);
   const item = raw as Record<string, unknown>;
   const type = item.type;
-  if (type !== "vocabulary_meaning" && type !== "sentence_comprehension")
+  if (
+    type !== "vocabulary_meaning" &&
+    type !== "sentence_comprehension" &&
+    type !== "grammar_form"
+  )
     fail(`item ${index} has an invalid type`);
   if (
     typeof item.difficulty !== "number" ||
@@ -55,10 +59,10 @@ function parseItem(raw: unknown, index: number): PackItem {
   )
     fail(`vocabulary item ${index} needs a lemma`);
   if (
-    type === "sentence_comprehension" &&
+    (type === "sentence_comprehension" || type === "grammar_form") &&
     (typeof item.prompt !== "string" || !item.prompt.trim())
   )
-    fail(`sentence item ${index} needs a prompt`);
+    fail(`${type} item ${index} needs a prompt`);
   const result: PackItem = {
     type,
     difficulty: item.difficulty,
@@ -123,9 +127,10 @@ export function normalizePack(pack: AssessmentPack): NormalizedItem[] {
   return pack.items.map((item) => {
     const isVocab = item.type === "vocabulary_meaning";
     const prompt = isVocab ? (item.lemma as string) : (item.prompt as string);
+    const prefix = item.type === "grammar_form" ? "g" : "s";
     const itemKey = isVocab
       ? `${pack.language}.v${pack.version}.${slug(item.lemma as string)}.${slug(item.correct)}`
-      : `${pack.language}.v${pack.version}.s.${hash8(prompt)}`;
+      : `${pack.language}.v${pack.version}.${prefix}.${hash8(prompt)}`;
     if (seen.has(itemKey)) fail(`duplicate item key ${itemKey}`);
     seen.add(itemKey);
     const { options, correctOptionKey } = stableOptions(

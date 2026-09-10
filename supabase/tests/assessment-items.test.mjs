@@ -17,7 +17,8 @@ test('card 13.6: assessment_item schema, constraints, and response columns', asy
           n.endsWith('.sql') &&
           (n < '20260909000600' ||
             n.startsWith('20260909001000') ||
-            n.startsWith('20260910000100')),
+            n.startsWith('20260910000100') ||
+            n.startsWith('20260910000200')),
       )
       .sort();
     for (const name of names) {
@@ -50,6 +51,9 @@ test('card 13.6: assessment_item schema, constraints, and response columns', asy
     const bad = (key, type, difficulty, options) =>
       `insert into assessment_item (language_id,base_language_id,item_key,item_type,difficulty,prompt,options,correct_option_key)
         values ('${pl.id}','${en.id}','${key}','${type}',${difficulty},'p','${options}'::jsonb,'a')`;
+    await db.query(
+      bad('kg', 'grammar_form', 2, '[{"key":"a","text":"x"},{"key":"b","text":"y"}]'),
+    );
     await fails(bad('k1', 'bad_type', 1, '[{"key":"a","text":"x"},{"key":"b","text":"y"}]'), '23514');
     await fails(bad('k2', 'vocabulary_meaning', 9, '[{"key":"a","text":"x"},{"key":"b","text":"y"}]'), '23514');
     await fails(bad('k3', 'vocabulary_meaning', 1, '[{"key":"a","text":"x"}]'), '23514');

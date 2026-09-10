@@ -126,18 +126,38 @@ async function ownedAssessment(
   authUserId: string,
   assessmentId: string,
 ): Promise<AssessmentRow> {
-  const profile = await getProfile(client, authUserId);
+  const [profile, assessment] = await Promise.all([
+    getProfile(client, authUserId),
+    client
+      .from("assessment")
+      .select("id, user_id, language_id, kind, focus_difficulty")
+      .eq("id", assessmentId)
+      .maybeSingle(),
+  ]);
+  if (assessment.error) throw new Error(assessment.error.message);
   if (!profile) throw new AssessmentForbidden();
-  const { data, error } = await client
-    .from("assessment")
-    .select("id, user_id, language_id, kind, focus_difficulty")
-    .eq("id", assessmentId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new AssessmentNotFound();
-  const row = data as AssessmentRow;
+  if (!assessment.data) throw new AssessmentNotFound();
+  const row = assessment.data as AssessmentRow;
   if (row.user_id !== profile.id) throw new AssessmentForbidden();
   return row;
+}
+
+async function fetchItem(
+  client: AdminClient,
+  languageId: string,
+  itemKey: string,
+): Promise<ItemRow | null> {
+  const { data, error } = await client
+    .from("assessment_item")
+    .select(
+      "item_key, version, item_type, difficulty, prompt, options, correct_option_key",
+    )
+    .eq("language_id", languageId)
+    .eq("item_key", itemKey)
+    .eq("active", true)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as ItemRow | null) ?? null;
 }
 
 async function progressOf(
@@ -195,11 +215,11 @@ export async function nextQuestion(
   assessmentId: string,
 ): Promise<NextQuestion> {
   const assessment = await ownedAssessment(client, authUserId, assessmentId);
-  const items = scopedItems(
-    assessment,
-    await activeItems(client, assessment.language_id),
-  );
-  const progress = await progressOf(client, assessment.id);
+  const [allItems, progress] = await Promise.all([
+    activeItems(client, assessment.language_id),
+    progressOf(client, assessment.id),
+  ]);
+  const items = scopedItems(assessment, allItems);
   const remaining = items.filter(
     (item) => !progress.answered.has(item.item_key),
   );
@@ -228,16 +248,12 @@ export async function submitAnswer(
   selectedOptionKey: string,
 ): Promise<AnswerResult> {
   const assessment = await ownedAssessment(client, authUserId, assessmentId);
-  const { data, error } = await client
-    .from("assessment_item")
-    .select("item_key, version, difficulty, options, correct_option_key")
-    .eq("language_id", assessment.language_id)
-    .eq("item_key", itemId)
-    .eq("active", true)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new ItemNotFound();
-  const item = data as ItemRow;
+  const [item, allItems, before] = await Promise.all([
+    fetchItem(client, assessment.language_id, itemId),
+    activeItems(client, assessment.language_id),
+    progressOf(client, assessment.id),
+  ]);
+  if (!item) throw new ItemNotFound();
   if (
     assessment.kind === "knowledge_check" &&
     assessment.focus_difficulty !== null &&
@@ -247,8 +263,8 @@ export async function submitAnswer(
   if (!item.options.some((option) => option.key === selectedOptionKey))
     throw new InvalidAnswer();
   const correct = selectedOptionKey === item.correct_option_key;
-  const before = await progressOf(client, assessment.id);
-  if (!before.answered.has(item.item_key)) {
+  const alreadyAnswered = before.answered.has(item.item_key);
+  if (!alreadyAnswered) {
     const insert = await client.from("assessment_response").insert({
       assessment_id: assessment.id,
       item_id: item.item_key,
@@ -259,13 +275,19 @@ export async function submitAnswer(
     });
     if (insert.error) throw new Error(insert.error.message);
   }
-  const items = scopedItems(
-    assessment,
-    await activeItems(client, assessment.language_id),
-  );
-  const progress = await progressOf(client, assessment.id);
+  // Derive post-insert progress in memory instead of re-reading it.
+  const answered = new Set(before.answered);
+  answered.add(item.item_key);
+  const progress: Progress = alreadyAnswered
+    ? before
+    : {
+        answered,
+        count: before.count + 1,
+        correct: before.correct + (correct ? 1 : 0),
+      };
+  const items = scopedItems(assessment, allItems);
   const remaining = items.filter(
-    (candidate) => !progress.answered.has(candidate.item_key),
+    (candidate) => !answered.has(candidate.item_key),
   ).length;
   const finished = isFinished(assessment, progress, remaining, items.length);
   if (finished) await finalize(client, assessment);

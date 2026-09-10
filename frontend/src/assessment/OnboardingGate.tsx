@@ -13,10 +13,11 @@ import {
   startOnboarding,
 } from './api';
 import { AssessmentModal } from './AssessmentModal';
+import { ErrorModal } from './ErrorModal';
 import { LanguageSelectionModal } from './LanguageSelectionModal';
 import { isOnboardingRequired, needsAutoStart } from './state';
 
-type Step = 'language' | 'assessment' | null;
+type Step = 'language' | 'assessment' | 'error' | null;
 
 export function OnboardingGate({ children }: { children: ReactNode }) {
   const { session, configured } = useAuth();
@@ -34,7 +35,6 @@ function OnboardingController() {
   const [options, setOptions] = useState<LanguageOptions | null>(null);
   const [assessment, setAssessment] = useState<AssessmentDto | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,7 +53,6 @@ function OnboardingController() {
   }, []);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       const languages = await getLanguageOnboarding();
@@ -64,10 +63,8 @@ function OnboardingController() {
         await loadAssessmentStep();
       }
     } catch {
-      setStep('assessment');
       setError('We could not load your setup. Please try again.');
-    } finally {
-      setLoading(false);
+      setStep('error');
     }
   }, [loadAssessmentStep]);
 
@@ -88,13 +85,11 @@ function OnboardingController() {
       void (async () => {
         try {
           await setLanguages(nativeCode, learningCode);
-          setLoading(true);
           await loadAssessmentStep();
         } catch {
           setError('We could not save your languages. Please try again.');
         } finally {
           setSaving(false);
-          setLoading(false);
         }
       })();
     },
@@ -114,14 +109,21 @@ function OnboardingController() {
           onExit={() => setDismissed(true)}
         />
       )}
-      {step === 'assessment' && (
+      {step === 'assessment' && assessment && (
         <AssessmentModal
           visible={!dismissed}
-          assessment={assessment}
-          loading={loading}
-          error={error}
+          assessmentId={assessment.id}
+          languageName={assessment.language.name}
           onExit={() => setDismissed(true)}
+          onFinished={() => void loadAssessmentStep()}
+        />
+      )}
+      {step === 'error' && (
+        <ErrorModal
+          visible={!dismissed}
+          message={error ?? 'Something went wrong.'}
           onRetry={() => void load()}
+          onExit={() => setDismissed(true)}
         />
       )}
       {dismissed && (

@@ -2,10 +2,22 @@ import { Router } from "express";
 import type { AdminClient } from "../lib/supabase.js";
 import { assessmentRoutes } from "./assessments.js";
 import { onboardingRoutes } from "./onboarding.js";
+import { computeReadingProfile } from "../lib/readingProfile.js";
 export function apiRoutes(client: AdminClient) {
   const router = Router();
   router.use("/onboarding", onboardingRoutes(client));
   router.use("/assessments", assessmentRoutes(client));
+  router.get("/profile", async (_req, res) => {
+    try {
+      const profile = await computeReadingProfile(
+        client,
+        res.locals.userId as string,
+      );
+      res.json({ profile });
+    } catch {
+      res.status(503).json({ error: "database_unavailable" });
+    }
+  });
   router.get("/me", async (_req, res) => {
     // Service role bypasses RLS: always derive ownership from verified identity.
     const userId = res.locals.userId as string;

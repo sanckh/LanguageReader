@@ -12,11 +12,14 @@ import { ConnectionCheck } from '../components/ConnectionCheck';
 import { PlaceholderScreen } from '../components/PlaceholderScreen';
 import { useAuth } from '../auth/AuthProvider';
 import { authRedirectUrl, signInWithProvider } from '../auth/oauth';
+import { restartOnboarding } from '../assessment/api';
+import { useOnboardingReload } from '../assessment/OnboardingGate';
 import { getSupabase } from '../lib/supabase';
 import { colors } from '../theme';
 
 export function AccountScreen() {
   const { session, loading, error, configured } = useAuth();
+  const reloadOnboarding = useOnboardingReload();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [creating, setCreating] = useState(false);
@@ -109,6 +112,17 @@ export function AccountScreen() {
                 });
                 if (error)
                   throw new Error('Could not sign out. Please try again.');
+              })
+            }
+          />
+          <Button
+            title="Restart reading assessment"
+            disabled={busy}
+            color={colors.accent}
+            onPress={() =>
+              run(async () => {
+                await restartOnboarding();
+                reloadOnboarding();
               })
             }
           />

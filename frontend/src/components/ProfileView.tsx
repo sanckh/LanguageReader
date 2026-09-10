@@ -27,8 +27,10 @@ export function ProfileView({ profile }: { profile: ReadingProfileDto }) {
         <Text style={styles.cefr}>CEFR {profile.cefr} (approx.)</Text>
       </View>
       <View style={styles.stats}>
-        <Stat value={String(profile.vocabularyKnown)} label="Words known" />
-        <Stat value={profile.vocabularyRange} label="Estimated vocabulary" />
+        <Stat
+          value={String(profile.vocabularyKnown)}
+          label="Words checked & known"
+        />
       </View>
       <Section label="STRENGTHS" items={profile.strengths} />
       <Section label="DEVELOPING" items={profile.developing} />

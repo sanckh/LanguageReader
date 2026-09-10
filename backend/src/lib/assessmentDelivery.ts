@@ -19,11 +19,14 @@ const MAX_QUESTIONS = 12;
 const MIN_FOR_EARLY_STOP = 8;
 const HIGH_ACCURACY = 0.85;
 const LOW_ACCURACY = 0.2;
+const CHECK_MAX_QUESTIONS = 8;
 
 interface AssessmentRow {
   id: string;
   user_id: string;
   language_id: string;
+  kind: "onboarding" | "knowledge_check";
+  focus_difficulty: number | null;
 }
 
 interface ItemRow {
@@ -53,9 +56,19 @@ function shuffle(
   return copy;
 }
 
-// The running score walks a difficulty ladder; correct answers raise the
-// target and skip easier items, wrong answers lower it. Order-independent so
-// it can be recomputed from stored responses without a timestamp column.
+function scopedItems(assessment: AssessmentRow, items: ItemRow[]): ItemRow[] {
+  if (
+    assessment.kind === "knowledge_check" &&
+    assessment.focus_difficulty !== null
+  )
+    return items.filter(
+      (item) => item.difficulty === assessment.focus_difficulty,
+    );
+  return items;
+}
+
+// Onboarding walks a difficulty ladder (correct raises the target, wrong lowers
+// it); order-independent so it recomputes from stored responses.
 function targetDifficulty(
   progress: Progress,
   min: number,
@@ -66,14 +79,46 @@ function targetDifficulty(
   return Math.max(min, Math.min(max, raw));
 }
 
-function isFinished(progress: Progress, remaining: number): boolean {
+function isFinished(
+  assessment: AssessmentRow,
+  progress: Progress,
+  remaining: number,
+  scopeCount: number,
+): boolean {
   if (remaining === 0) return true;
+  if (assessment.kind === "knowledge_check")
+    return progress.count >= Math.min(scopeCount, CHECK_MAX_QUESTIONS);
   if (progress.count >= MAX_QUESTIONS) return true;
   if (progress.count >= MIN_FOR_EARLY_STOP) {
     const accuracy = progress.correct / progress.count;
     if (accuracy >= HIGH_ACCURACY || accuracy <= LOW_ACCURACY) return true;
   }
   return false;
+}
+
+function chooseItem(
+  assessment: AssessmentRow,
+  remaining: ItemRow[],
+  scopeItems: ItemRow[],
+  progress: Progress,
+): ItemRow {
+  if (assessment.kind === "knowledge_check")
+    return [...remaining].sort((a, b) =>
+      a.item_key < b.item_key ? -1 : a.item_key > b.item_key ? 1 : 0,
+    )[0]!;
+  const difficulties = scopeItems.map((item) => item.difficulty);
+  const target = targetDifficulty(
+    progress,
+    Math.min(...difficulties),
+    Math.max(...difficulties),
+  );
+  return remaining.reduce((best, item) => {
+    const distance = Math.abs(item.difficulty - target);
+    const bestDistance = Math.abs(best.difficulty - target);
+    if (distance < bestDistance) return item;
+    if (distance === bestDistance && item.item_key < best.item_key) return item;
+    return best;
+  });
 }
 
 async function ownedAssessment(
@@ -85,7 +130,7 @@ async function ownedAssessment(
   if (!profile) throw new AssessmentForbidden();
   const { data, error } = await client
     .from("assessment")
-    .select("id, user_id, language_id")
+    .select("id, user_id, language_id, kind, focus_difficulty")
     .eq("id", assessmentId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -127,30 +172,21 @@ async function activeItems(
   return data as ItemRow[];
 }
 
-function chooseItem(remaining: ItemRow[], target: number): ItemRow {
-  return remaining.reduce((best, item) => {
-    const closer =
-      Math.abs(item.difficulty - target) < Math.abs(best.difficulty - target);
-    const tie =
-      item.difficulty === best.difficulty && item.item_key < best.item_key;
-    const nearerTie =
-      Math.abs(item.difficulty - target) ===
-        Math.abs(best.difficulty - target) &&
-      (item.difficulty < best.difficulty || tie);
-    return closer || nearerTie ? item : best;
-  });
-}
-
-async function markCompleted(
+// Completes the assessment and seeds the learner model exactly once, whichever
+// request (answer or next) first observes that it is finished.
+async function finalize(
   client: AdminClient,
-  assessmentId: string,
+  assessment: AssessmentRow,
 ): Promise<void> {
-  const { error } = await client
+  const { data, error } = await client
     .from("assessment")
     .update({ status: "completed", completed_at: new Date().toISOString() })
-    .eq("id", assessmentId)
-    .eq("status", "in_progress");
+    .eq("id", assessment.id)
+    .eq("status", "in_progress")
+    .select("id");
   if (error) throw new Error(error.message);
+  if ((data as { id: string }[]).length > 0)
+    await seedKnowledgeFromAssessment(client, assessment);
 }
 
 export async function nextQuestion(
@@ -159,20 +195,19 @@ export async function nextQuestion(
   assessmentId: string,
 ): Promise<NextQuestion> {
   const assessment = await ownedAssessment(client, authUserId, assessmentId);
-  const items = await activeItems(client, assessment.language_id);
+  const items = scopedItems(
+    assessment,
+    await activeItems(client, assessment.language_id),
+  );
   const progress = await progressOf(client, assessment.id);
   const remaining = items.filter(
     (item) => !progress.answered.has(item.item_key),
   );
-  if (isFinished(progress, remaining.length))
+  if (isFinished(assessment, progress, remaining.length, items.length)) {
+    await finalize(client, assessment);
     return { question: null, finished: true };
-  const difficulties = items.map((item) => item.difficulty);
-  const target = targetDifficulty(
-    progress,
-    Math.min(...difficulties),
-    Math.max(...difficulties),
-  );
-  const item = chooseItem(remaining, target);
+  }
+  const item = chooseItem(assessment, remaining, items, progress);
   const question: AssessmentQuestion = {
     itemId: item.item_key,
     type: item.item_type,
@@ -203,6 +238,12 @@ export async function submitAnswer(
   if (error) throw new Error(error.message);
   if (!data) throw new ItemNotFound();
   const item = data as ItemRow;
+  if (
+    assessment.kind === "knowledge_check" &&
+    assessment.focus_difficulty !== null &&
+    item.difficulty !== assessment.focus_difficulty
+  )
+    throw new ItemNotFound();
   if (!item.options.some((option) => option.key === selectedOptionKey))
     throw new InvalidAnswer();
   const correct = selectedOptionKey === item.correct_option_key;
@@ -218,15 +259,15 @@ export async function submitAnswer(
     });
     if (insert.error) throw new Error(insert.error.message);
   }
-  const items = await activeItems(client, assessment.language_id);
+  const items = scopedItems(
+    assessment,
+    await activeItems(client, assessment.language_id),
+  );
   const progress = await progressOf(client, assessment.id);
   const remaining = items.filter(
     (candidate) => !progress.answered.has(candidate.item_key),
   ).length;
-  const finished = isFinished(progress, remaining);
-  if (finished) {
-    await markCompleted(client, assessment.id);
-    await seedKnowledgeFromAssessment(client, assessment);
-  }
+  const finished = isFinished(assessment, progress, remaining, items.length);
+  if (finished) await finalize(client, assessment);
   return { correct, correctOptionKey: item.correct_option_key, finished };
 }

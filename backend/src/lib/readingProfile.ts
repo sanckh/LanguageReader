@@ -10,13 +10,9 @@ const LEVELS: ReadingLevel[] = [
   "Intermediate",
 ];
 const CEFR = ["A1", "A2", "A2–B1", "B1"];
-const RANGES = [
-  "~100–300 words",
-  "~300–800 words",
-  "~800–2,000 words",
-  "~2,000–4,000 words",
-];
 const KNOWN_THRESHOLD = 50;
+const LEVEL_PASS_RATIO = 0.5;
+const LEVEL_MIN_ATTEMPTS = 2;
 const STRENGTH_RATIO = 0.67;
 const DEVELOPING_RATIO = 0.5;
 
@@ -45,6 +41,7 @@ export async function computeReadingProfile(
     .select("id")
     .eq("user_id", profile.id)
     .eq("language_id", languageId)
+    .eq("kind", "onboarding")
     .eq("status", "completed")
     .order("completed_at", { ascending: false })
     .limit(1);
@@ -78,23 +75,26 @@ export async function computeReadingProfile(
     ]),
   );
 
-  const total = answers.length;
-  const correct = answers.filter((answer) => answer.correct).length;
-  const accuracy = correct / total;
-  const maxCorrectDifficulty = answers.reduce(
-    (max, answer) =>
-      answer.correct && answer.difficulty_at_time > max
-        ? answer.difficulty_at_time
-        : max,
-    1,
-  );
-  const levelIndex = Math.max(
-    0,
-    Math.min(
-      3,
-      Math.round(maxCorrectDifficulty) - 1 - (accuracy < 0.5 ? 1 : 0),
-    ),
-  );
+  // Level = the highest difficulty band the learner passed (>=50% with at
+  // least 2 attempts), so a single lucky hard answer can't inflate the result.
+  const byBand = new Map<number, { correct: number; total: number }>();
+  for (const answer of answers) {
+    const entry = byBand.get(answer.difficulty_at_time) ?? {
+      correct: 0,
+      total: 0,
+    };
+    entry.total += 1;
+    if (answer.correct) entry.correct += 1;
+    byBand.set(answer.difficulty_at_time, entry);
+  }
+  let passedBand = 1;
+  for (const [difficulty, stats] of [...byBand].sort((a, b) => a[0] - b[0]))
+    if (
+      stats.total >= LEVEL_MIN_ATTEMPTS &&
+      stats.correct / stats.total >= LEVEL_PASS_RATIO
+    )
+      passedBand = difficulty;
+  const levelIndex = Math.max(0, Math.min(3, passedBand - 1));
 
   const tally = new Map<string, { correct: number; total: number }>();
   for (const answer of answers) {
@@ -126,7 +126,6 @@ export async function computeReadingProfile(
     level: LEVELS[levelIndex]!,
     cefr: CEFR[levelIndex]!,
     vocabularyKnown: known.count ?? 0,
-    vocabularyRange: RANGES[levelIndex]!,
     strengths: strengths.slice(0, 4),
     developing: developing.slice(0, 4),
   };

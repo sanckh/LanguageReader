@@ -637,3 +637,245 @@ test("Completing an assessment seeds confidence and returns a reading profile", 
     await admin.auth.admin.deleteUser(authId);
   }
 });
+test("Restarting onboarding abandons the current assessment and starts a fresh one", async () => {
+  const config = loadConfig({
+    APP_ENV: "development",
+    SUPABASE_URL: status.API_URL!,
+    SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY!,
+  });
+  const admin = createAdminClient(config);
+  const server = createApp(config, admin).listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const base = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
+  const email = "restart-" + randomUUID() + "@example.test";
+  const password = randomUUID() + "Aa9!";
+  const created = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  assert.equal(created.error, null);
+  const authId = created.data.user!.id;
+  const userClient = createClient(config.supabaseUrl, status.ANON_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const signed = await userClient.auth.signInWithPassword({ email, password });
+  assert.equal(signed.error, null);
+  const authorized = {
+    authorization: "Bearer " + signed.data.session!.access_token,
+    "content-type": "application/json",
+  };
+  const post = <T>(path: string) =>
+    fetch(base + path, { method: "POST", headers: authorized }).then(
+      (response) => response.json() as Promise<T>,
+    );
+  let profileId = "";
+  try {
+    await fetch(base + "/api/onboarding/languages", {
+      method: "POST",
+      headers: authorized,
+      body: JSON.stringify({ nativeCode: "en", learningCode: "pl" }),
+    });
+    const first = await post<{ assessment: { id: string } }>(
+      "/api/assessments/onboarding",
+    );
+    const restarted = await post<{ state: string; assessment: { id: string } }>(
+      "/api/assessments/onboarding/restart",
+    );
+    assert.equal(restarted.state, "in_progress");
+    assert.notEqual(restarted.assessment.id, first.assessment.id);
+    const profileRow = await admin
+      .from("user_profile")
+      .select("id")
+      .eq("auth_user_id", authId)
+      .single();
+    profileId = profileRow.data!.id as string;
+    const rows = await admin
+      .from("assessment")
+      .select("id, status")
+      .eq("user_id", profileId);
+    const byId = new Map(
+      (rows.data as { id: string; status: string }[]).map((r) => [
+        r.id,
+        r.status,
+      ]),
+    );
+    assert.equal(byId.get(first.assessment.id), "abandoned");
+    assert.equal(byId.get(restarted.assessment.id), "in_progress");
+    const current = await fetch(base + "/api/assessments/onboarding", {
+      headers: authorized,
+    }).then(
+      (r) => r.json() as Promise<{ state: string; assessment: { id: string } }>,
+    );
+    assert.equal(current.state, "in_progress");
+    assert.equal(current.assessment.id, restarted.assessment.id);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (profileId)
+      await admin.from("assessment").delete().eq("user_id", profileId);
+    if (profileId)
+      await admin.from("user_profile").delete().eq("id", profileId);
+    await admin.auth.admin.deleteUser(authId);
+  }
+});
+test("Knowledge checks are level-scoped, seed confidence, and leave the onboarding profile untouched", async () => {
+  const config = loadConfig({
+    APP_ENV: "development",
+    SUPABASE_URL: status.API_URL!,
+    SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY!,
+  });
+  const admin = createAdminClient(config);
+  const server = createApp(config, admin).listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const base = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
+  const suffix = randomUUID().slice(0, 8);
+  const email = "check-" + suffix + "@example.test";
+  const password = randomUUID() + "Aa9!";
+  const created = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  assert.equal(created.error, null);
+  const authId = created.data.user!.id;
+  const userClient = createClient(config.supabaseUrl, status.ANON_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const signed = await userClient.auth.signInWithPassword({ email, password });
+  assert.equal(signed.error, null);
+  const authorized = {
+    authorization: "Bearer " + signed.data.session!.access_token,
+    "content-type": "application/json",
+  };
+  const json = <T>(path: string, init?: RequestInit) =>
+    fetch(base + path, {
+      ...init,
+      headers: { ...authorized, ...init?.headers },
+    }).then((response) => response.json() as Promise<T>);
+  let profileId = "";
+  const itemKeys = ["check.a." + suffix, "check.b." + suffix];
+  const lexemeIds: string[] = [];
+  try {
+    await json("/api/onboarding/languages", {
+      method: "POST",
+      body: JSON.stringify({ nativeCode: "en", learningCode: "pl" }),
+    });
+    const pl = await admin
+      .from("language")
+      .select("id")
+      .eq("code", "pl")
+      .single();
+    const en = await admin
+      .from("language")
+      .select("id")
+      .eq("code", "en")
+      .single();
+    const languageId = pl.data!.id as string;
+    for (const lemma of ["czas-" + suffix, "rok-" + suffix]) {
+      const lexeme = await admin
+        .from("lexeme")
+        .insert({ language_id: languageId, lemma })
+        .select("id")
+        .single();
+      lexemeIds.push(lexeme.data!.id as string);
+    }
+    const items = itemKeys.map((itemKey, index) => ({
+      language_id: languageId,
+      base_language_id: en.data!.id as string,
+      item_key: itemKey,
+      version: 1,
+      item_type: "vocabulary_meaning",
+      difficulty: 2,
+      target_lexeme_id: lexemeIds[index],
+      prompt: "p" + index,
+      options: [
+        { key: "a", text: "right" + index },
+        { key: "b", text: "wrong" + index },
+      ],
+      correct_option_key: "a",
+      metadata: { concepts: ["past_tense"] },
+    }));
+    assert.equal(
+      (await admin.from("assessment_item").insert(items)).error,
+      null,
+    );
+
+    const checks = await json<{
+      checks: {
+        difficulty: number;
+        level: string;
+        itemCount: number;
+        topics: string[];
+      }[];
+    }>("/api/assessments/checks");
+    const beginner = checks.checks.find((c) => c.difficulty === 2);
+    assert.ok(beginner);
+    assert.equal(beginner!.itemCount, 2);
+    assert.equal(beginner!.level, "Beginner");
+    assert.ok(beginner!.topics.includes("Past tense"));
+
+    assert.equal(
+      (
+        await fetch(base + "/api/assessments/checks", {
+          method: "POST",
+          headers: authorized,
+          body: JSON.stringify({ difficulty: 5 }),
+        })
+      ).status,
+      404,
+    );
+
+    const check = await json<{ assessmentId: string; level: string }>(
+      "/api/assessments/checks",
+      { method: "POST", body: JSON.stringify({ difficulty: 2 }) },
+    );
+    for (let step = 0; step < 5; step++) {
+      const next = await json<{
+        question: { itemId: string } | null;
+        finished: boolean;
+      }>("/api/assessments/" + check.assessmentId + "/next");
+      if (next.finished || !next.question) break;
+      await json("/api/assessments/" + check.assessmentId + "/answer", {
+        method: "POST",
+        body: JSON.stringify({
+          itemId: next.question.itemId,
+          selectedOptionKey: "a",
+        }),
+      });
+    }
+    const profileRow = await admin
+      .from("user_profile")
+      .select("id")
+      .eq("auth_user_id", authId)
+      .single();
+    profileId = profileRow.data!.id as string;
+    const confidence = await admin
+      .from("knowledge_confidence")
+      .select("lexeme_id")
+      .eq("user_id", profileId)
+      .eq("language_id", languageId);
+    assert.equal((confidence.data as unknown[]).length, 2);
+
+    const profile = await json<{ profile: unknown }>("/api/profile");
+    assert.equal(profile.profile, null);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (profileId) {
+      await admin.from("assessment_response").delete().in("item_id", itemKeys);
+      await admin
+        .from("knowledge_confidence")
+        .delete()
+        .eq("user_id", profileId);
+      await admin.from("assessment").delete().eq("user_id", profileId);
+    }
+    await admin.from("assessment_item").delete().in("item_key", itemKeys);
+    for (const lexemeId of lexemeIds) {
+      await admin.from("lexeme").delete().eq("id", lexemeId);
+    }
+    if (profileId)
+      await admin.from("user_profile").delete().eq("id", profileId);
+    await admin.auth.admin.deleteUser(authId);
+  }
+});

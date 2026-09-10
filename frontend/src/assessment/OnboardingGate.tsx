@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthProvider';
@@ -19,14 +26,23 @@ import { isOnboardingRequired, needsAutoStart } from './state';
 
 type Step = 'language' | 'assessment' | 'error' | null;
 
+const OnboardingReloadContext = createContext<() => void>(() => {});
+export const useOnboardingReload = () => useContext(OnboardingReloadContext);
+
 export function OnboardingGate({ children }: { children: ReactNode }) {
   const { session, configured } = useAuth();
   const ready = Boolean(session) && configured && apiConfigured();
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((value) => value + 1), []);
   return (
-    <>
+    <OnboardingReloadContext.Provider value={reload}>
       {children}
-      {ready && <OnboardingController key={session?.user.id ?? 'anon'} />}
-    </>
+      {ready && (
+        <OnboardingController
+          key={(session?.user.id ?? 'anon') + ':' + nonce}
+        />
+      )}
+    </OnboardingReloadContext.Provider>
   );
 }
 
@@ -113,7 +129,7 @@ function OnboardingController() {
         <AssessmentModal
           visible={!dismissed}
           assessmentId={assessment.id}
-          languageName={assessment.language.name}
+          label={'READING ASSESSMENT · ' + assessment.language.name}
           onExit={() => setDismissed(true)}
           onFinished={() => void loadAssessmentStep()}
         />

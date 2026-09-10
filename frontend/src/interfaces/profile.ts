@@ -5,7 +5,6 @@ export interface ReadingProfileDto {
   level: ReadingLevel;
   cefr: string;
   vocabularyKnown: number;
-  vocabularyRange: string;
   strengths: string[];
   developing: string[];
 }

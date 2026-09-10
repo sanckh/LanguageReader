@@ -26,7 +26,7 @@ function toDto(row: AssessmentRow): AssessmentDto {
   };
 }
 
-async function activeAssessment(
+async function activeOnboarding(
   client: AdminClient,
   profileId: string,
 ): Promise<AssessmentRow | null> {
@@ -34,11 +34,31 @@ async function activeAssessment(
     .from("assessment")
     .select(ASSESSMENT_COLUMNS)
     .eq("user_id", profileId)
+    .eq("kind", "onboarding")
     .eq("status", "in_progress")
     .limit(1);
   if (error) throw new Error(error.message);
   // A many-to-one embed returns one object at runtime despite the array type.
   return (data as unknown as AssessmentRow[])[0] ?? null;
+}
+
+async function createOnboarding(
+  client: AdminClient,
+  profileId: string,
+  languageId: string,
+): Promise<AssessmentRow> {
+  const { data, error } = await client
+    .from("assessment")
+    .insert({
+      user_id: profileId,
+      language_id: languageId,
+      status: "in_progress",
+      kind: "onboarding",
+    })
+    .select(ASSESSMENT_COLUMNS)
+    .single();
+  if (error) throw new Error(error.message);
+  return data as unknown as AssessmentRow;
 }
 
 export async function readOnboarding(
@@ -47,12 +67,13 @@ export async function readOnboarding(
 ): Promise<OnboardingResponse> {
   const profile = await getProfile(client, authUserId);
   if (!profile) return { state: "not_started", assessment: null };
-  const active = await activeAssessment(client, profile.id);
+  const active = await activeOnboarding(client, profile.id);
   if (active) return { state: "in_progress", assessment: toDto(active) };
   const { data, error } = await client
     .from("assessment")
     .select("id")
     .eq("user_id", profile.id)
+    .eq("kind", "onboarding")
     .eq("status", "completed")
     .limit(1);
   if (error) throw new Error(error.message);
@@ -66,20 +87,33 @@ export async function startOnboarding(
 ): Promise<OnboardingResponse> {
   const profile = await getProfile(client, authUserId);
   if (!profile?.learning_language_id) throw new LanguageNotSelected();
-  const active = await activeAssessment(client, profile.id);
+  const active = await activeOnboarding(client, profile.id);
   if (active) return { state: "in_progress", assessment: toDto(active) };
-  const { data, error } = await client
+  const created = await createOnboarding(
+    client,
+    profile.id,
+    profile.learning_language_id,
+  );
+  return { state: "in_progress", assessment: toDto(created) };
+}
+
+export async function restartOnboarding(
+  client: AdminClient,
+  authUserId: string,
+): Promise<OnboardingResponse> {
+  const profile = await getProfile(client, authUserId);
+  if (!profile?.learning_language_id) throw new LanguageNotSelected();
+  const abandoned = await client
     .from("assessment")
-    .insert({
-      user_id: profile.id,
-      language_id: profile.learning_language_id,
-      status: "in_progress",
-    })
-    .select(ASSESSMENT_COLUMNS)
-    .single();
-  if (error) throw new Error(error.message);
-  return {
-    state: "in_progress",
-    assessment: toDto(data as unknown as AssessmentRow),
-  };
+    .update({ status: "abandoned" })
+    .eq("user_id", profile.id)
+    .eq("kind", "onboarding")
+    .eq("status", "in_progress");
+  if (abandoned.error) throw new Error(abandoned.error.message);
+  const created = await createOnboarding(
+    client,
+    profile.id,
+    profile.learning_language_id,
+  );
+  return { state: "in_progress", assessment: toDto(created) };
 }

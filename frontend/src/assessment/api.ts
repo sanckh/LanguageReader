@@ -9,6 +9,10 @@ import type {
   LanguageSelection,
 } from '../interfaces/language';
 import type { ReadingProfileResponse } from '../interfaces/profile';
+import type {
+  KnowledgeChecksResponse,
+  KnowledgeCheckSession,
+} from '../interfaces/knowledgeCheck';
 
 const ASSESSMENT_PATH = '/api/assessments/onboarding';
 const LANGUAGES_PATH = '/api/onboarding/languages';
@@ -54,4 +58,21 @@ export function submitAnswer(
 
 export function getReadingProfile(): Promise<ReadingProfileResponse> {
   return apiFetch<ReadingProfileResponse>(PROFILE_PATH);
+}
+
+export function restartOnboarding(): Promise<OnboardingResponse> {
+  return apiFetch<OnboardingResponse>(`${ASSESSMENT_PATH}/restart`, {
+    method: 'POST',
+  });
+}
+
+export function getChecks(): Promise<KnowledgeChecksResponse> {
+  return apiFetch<KnowledgeChecksResponse>(`${ASSESSMENTS_BASE}/checks`);
+}
+
+export function startCheck(difficulty: number): Promise<KnowledgeCheckSession> {
+  return apiFetch<KnowledgeCheckSession>(`${ASSESSMENTS_BASE}/checks`, {
+    method: 'POST',
+    body: JSON.stringify({ difficulty }),
+  });
 }

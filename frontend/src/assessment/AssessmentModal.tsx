@@ -19,7 +19,8 @@ import { getNextQuestion, getReadingProfile, submitAnswer } from './api';
 type Props = {
   visible: boolean;
   assessmentId: string;
-  languageName: string;
+  label: string;
+  mode?: 'onboarding' | 'check';
   onExit: () => void;
   onFinished: () => void;
 };
@@ -29,7 +30,8 @@ type Phase = 'loading' | 'question' | 'finished' | 'error';
 export function AssessmentModal({
   visible,
   assessmentId,
-  languageName,
+  label,
+  mode = 'onboarding',
   onExit,
   onFinished,
 }: Props) {
@@ -74,7 +76,7 @@ export function AssessmentModal({
   }, [loadNext]);
 
   useEffect(() => {
-    if (phase !== 'finished') return;
+    if (phase !== 'finished' || mode !== 'onboarding') return;
     let active = true;
     void (async () => {
       setProfileLoading(true);
@@ -90,7 +92,7 @@ export function AssessmentModal({
     return () => {
       active = false;
     };
-  }, [phase]);
+  }, [phase, mode]);
 
   const answer = useCallback(
     (key: string) => {
@@ -129,7 +131,7 @@ export function AssessmentModal({
         edges={['top', 'left', 'right', 'bottom']}
       >
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.brand}>READING ASSESSMENT · {languageName}</Text>
+          <Text style={styles.brand}>{label}</Text>
           {phase === 'loading' && (
             <ActivityIndicator
               accessibilityLabel="Loading the assessment"
@@ -149,7 +151,18 @@ export function AssessmentModal({
               />
             </View>
           )}
-          {phase === 'finished' && (
+          {phase === 'finished' && mode === 'check' && (
+            <View style={styles.spacer}>
+              <Text accessibilityRole="header" style={styles.title}>
+                Check complete.
+              </Text>
+              <Text style={styles.body}>
+                Thanks — this helps tune what we recommend for you.
+              </Text>
+              <Button title="Done" color={colors.accent} onPress={onFinished} />
+            </View>
+          )}
+          {phase === 'finished' && mode === 'onboarding' && (
             <View style={styles.spacer}>
               <Text accessibilityRole="header" style={styles.title}>
                 Your reading profile

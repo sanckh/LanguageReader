@@ -15,7 +15,9 @@ test('card 13.6: assessment_item schema, constraints, and response columns', asy
       .filter(
         (n) =>
           n.endsWith('.sql') &&
-          (n < '20260909000600' || n.startsWith('20260909001000')),
+          (n < '20260909000600' ||
+            n.startsWith('20260909001000') ||
+            n.startsWith('20260910000100')),
       )
       .sort();
     for (const name of names) {
@@ -87,6 +89,27 @@ test('card 13.6: assessment_item schema, constraints, and response columns', asy
     );
     assert.equal(response.selected_option_key, 'a');
     assert.equal(response.item_version, 1);
+
+    const onboarding = await one(
+      'select kind, focus_difficulty from assessment where id=$1',
+      [assessment.id],
+    );
+    assert.equal(onboarding.kind, 'onboarding');
+    assert.equal(onboarding.focus_difficulty, null);
+    await one(
+      "insert into assessment(user_id,language_id,kind,focus_difficulty) values($1,$2,'knowledge_check',2) returning id",
+      [profile.id, pl.id],
+    );
+    await fails(
+      "insert into assessment(user_id,language_id,kind) values($1,$2,'bad')",
+      '23514',
+      [profile.id, pl.id],
+    );
+    await fails(
+      "insert into assessment(user_id,language_id,focus_difficulty) values($1,$2,9)",
+      '23514',
+      [profile.id, pl.id],
+    );
   } finally {
     await db.close();
   }

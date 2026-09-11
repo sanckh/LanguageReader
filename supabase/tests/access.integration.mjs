@@ -54,6 +54,26 @@ test('SDK: cross-user database and Storage isolation', async () => {
   };
   fixtures.push(rows);
  }
+ const sharedSection = await add('document_section',{document_id:shared.id,position:0,kind:'paragraph',body:'A😀ą'});
+ for (let i=0;i<2;i++) {
+  const u=users[i];
+  const section=await ok(u.client.from('document_section').insert({document_id:fixtures[i].document.id,position:0,kind:'paragraph',body:'Private text'}).select().single());
+  fixtures[i].document_section=section;
+  await ok(u.client.from('reading_position').upsert({user_id:u.profile,document_id:shared.id,section_id:sharedSection.id,character_offset:1}));
+  await ok(u.client.from('reading_position').upsert({user_id:u.profile,document_id:shared.id,section_id:sharedSection.id,character_offset:3}));
+  assert.equal((await ok(u.client.from('reading_position').select().single())).character_offset,3);
+  await denied(u.client.from('reading_position').upsert({user_id:u.profile,document_id:shared.id,section_id:sharedSection.id,character_offset:4}));
+  await denied(u.client.from('reading_position').upsert({user_id:u.profile,document_id:shared.id,section_id:section.id,character_offset:0}));
+  await denied(u.client.from('document_section').insert({document_id:shared.id,position:1,kind:'heading',body:'Attack'}));
+  assert.deepEqual(await ok(u.client.from('document_section').update({position:2}).eq('id',sharedSection.id).select()),[]);
+  assert.equal((await ok(u.client.from('document_section').select().eq('id',sharedSection.id))).length,1);
+ }
+ assert.deepEqual(await ok(b.client.from('reading_position').select().eq('user_id',a.profile)),[]);
+ assert.deepEqual(await ok(b.client.from('reading_position').delete().eq('user_id',a.profile).select()),[]);
+ await denied(b.client.from('reading_position').insert({user_id:a.profile,document_id:fixtures[0].document.id,section_id:fixtures[0].document_section.id}));
+ await denied(b.client.from('reading_position').insert({user_id:b.profile,document_id:fixtures[0].document.id,section_id:fixtures[0].document_section.id}));
+ await denied(client().from('document_section').select());
+ await denied(client().from('reading_position').select());
  // Check both directions, and ensure own records remain accessible.
  for (let i=0;i<2;i++) {
   const viewer=users[i].client;

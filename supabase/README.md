@@ -99,3 +99,39 @@ The check has a ten-second timeout and reports missing configuration, failed rea
 Remote project connection, SQL execution, RLS write-denial verification, EAS variable setup, and live Android/web checks are pending access/values. No live provisioning is claimed by these files.
 
 Only URL and publishable key are needed in frontend/.env.local now. Supabase MCP uses browser OAuth for administration. Database passwords/management access are only needed if using alternative administration tools, never in frontend config. EAS is already signed in; no extra Expo API key is needed for this work.
+
+## Card 20a: document content and reading positions
+
+`20260910000300_document_content.sql` adds nullable metadata to existing documents:
+`level` (1 Starter, 2 Beginner, 3 Developing, 4 Intermediate), `topic`,
+`word_count`, `source`, `attribution`, and `license`. Null means unknown or not yet
+processed; it is not silently classified as Starter or zero words. Ingestion is
+responsible for computing word counts and supplying provenance.
+
+Read `document_section` ordered by `position` (unique, zero-based, gaps allowed).
+Sections have stable UUIDs and a `paragraph` or `heading` kind. Text and identity
+cannot be updated: replace a section to change its body. Reordering retains its
+anchors; deleting/replacing it cascades deletion of saved positions referencing it.
+Consumers should fall back to the beginning when no position exists.
+
+Upsert `reading_position` on `(user_id,document_id)` with `section_id` and
+`character_offset`. User IDs are profile UUIDs. Offsets count Unicode code points
+from zero within the stored body, including an end-of-section offset. JavaScript
+clients must convert UTF-16 indices (e.g. use `Array.from(body)`); do not normalize
+text after obtaining offsets. The database rejects offsets outside the section
+and section/document mismatches and assigns `updated_at` on every save. Concurrent
+saves use the last database write; offline conflict resolution is future scope.
+
+Authenticated users read included sections and manage their own private sections.
+Only the service role writes included sections. Saved positions are private to the
+profile and require document access. Anonymous access is denied. No UI, content
+seeding, or production migration is part of this change.
+
+Run `node --test supabase/tests/*.test.mjs` from the repository root for embedded
+checks, and `node --test supabase/tests/access.integration.mjs` against the configured
+local Supabase stack for SDK checks. The content suite applies all application
+migrations, excluding the Storage migration which requires real Supabase Storage.
+
+Validation September 10, 2026: all five embedded suites and the local Supabase SDK
+isolation suite passed. The migration was also applied successfully to the existing
+local Docker test database. Production remains unchanged.

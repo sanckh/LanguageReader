@@ -15,12 +15,15 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "tsx --test tests/*.test.ts",
-    "test:integration": "tsx --test tests/supabase.integration.ts",
-    "import:assessment": "node --env-file-if-exists=.env.local --import tsx src/scripts/importAssessmentPack.ts"
+    "test:integration": "tsx --test tests/*.integration.ts",
+    "import:assessment": "node --env-file-if-exists=.env.local --import tsx src/scripts/importAssessmentPack.ts",
+    "import:library": "node --env-file-if-exists=.env.local --import tsx src/scripts/importLibrary.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",
+    "cheerio": "1.2.0",
     "cors": "2.8.6",
+    "domhandler": "6.0.1",
     "express": "5.2.1",
     "helmet": "8.3.0"
   },

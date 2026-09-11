@@ -1,0 +1,18 @@
+[
+  {
+    "book": "bulhakow-fatalne-jaja",
+    "topic": "Science fiction",
+    "level": null
+  },
+  { "book": "conrad-tajny-agent", "topic": "Political fiction", "level": null },
+  { "book": "doyle-panowie-z-reigate", "topic": "Mystery", "level": null },
+  { "book": "ksiega-dzungli", "topic": "Adventure", "level": null },
+  { "book": "makuszynski-wielka-brama", "topic": "Fiction", "level": null },
+  { "book": "nalkowska-dom-kobiet", "topic": "Drama", "level": null },
+  {
+    "book": "poe-przedwczesny-pogrzeb",
+    "topic": "Gothic fiction",
+    "level": null
+  },
+  { "book": "wells-wehikul-czasu", "topic": "Science fiction", "level": null }
+]

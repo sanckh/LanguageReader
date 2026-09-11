@@ -7,7 +7,7 @@ import { ReaderScreen } from '../screens/ReaderScreen';
 import { colors } from '../theme';
 
 export type RootTabParamList = {
-  Reader: undefined;
+  Reader: { documentId?: string } | undefined;
   Library: undefined;
   Learner: undefined;
   Account: undefined;

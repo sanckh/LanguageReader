@@ -67,6 +67,7 @@ export function LibraryView({
   onScopeChange,
   onRetry,
   onSignIn,
+  onOpenDocument,
 }: {
   books: LibraryBook[];
   scope: LibraryScope;
@@ -76,6 +77,7 @@ export function LibraryView({
   onScopeChange: (scope: LibraryScope) => void;
   onRetry: () => void;
   onSignIn: () => void;
+  onOpenDocument: (documentId: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
@@ -419,7 +421,11 @@ export function LibraryView({
         </View>
       </ScrollView>
       {selected && (
-        <BookDetails book={selected} onClose={() => setSelected(null)} />
+        <BookDetails
+          book={selected}
+          onClose={() => setSelected(null)}
+          onOpenDocument={onOpenDocument}
+        />
       )}
     </SafeAreaView>
   );
@@ -533,14 +539,19 @@ function ProviderBrowser({
   );
 }
 
+const PROVIDER_PREFIX = 'wolne-lektury:';
+
 function BookDetails({
   book,
   onClose,
+  onOpenDocument,
 }: {
   book: LibraryBook;
   onClose: () => void;
+  onOpenDocument: (documentId: string) => void;
 }) {
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
   const original = sourceLink(book.source),
     download = sourceLink(book.source_download_url);
   const open = async (url: string) => {
@@ -550,6 +561,26 @@ function BookDetails({
     } catch {
       setLinkError('This link could not be opened. Please try again.');
     }
+  };
+  const read = () => {
+    setOpening(true);
+    setLinkError(null);
+    void (async () => {
+      try {
+        const slug = book.id.startsWith(PROVIDER_PREFIX)
+          ? book.id.slice(PROVIDER_PREFIX.length)
+          : null;
+        const documentId = slug ? await importProviderBook(slug) : book.id;
+        onOpenDocument(documentId);
+        onClose();
+      } catch {
+        setLinkError(
+          'We couldn’t open this book for reading. Please try again.',
+        );
+      } finally {
+        setOpening(false);
+      }
+    })();
   };
   return (
     <Modal
@@ -598,13 +629,24 @@ function BookDetails({
               .filter(Boolean)
               .join(' · ')}
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Read in the app"
+            disabled={opening}
+            onPress={read}
+            style={styles.primary}
+          >
+            <Text style={styles.primaryText}>
+              {opening ? 'Opening…' : 'Read in the app'}
+            </Text>
+          </Pressable>
           {original && (
             <Pressable
               accessibilityRole="link"
               onPress={() => void open(original)}
-              style={styles.primary}
+              style={styles.secondary}
             >
-              <Text style={styles.primaryText}>Read the original ↗</Text>
+              <Text style={styles.link}>Read the original ↗</Text>
             </Pressable>
           )}
           {download && (

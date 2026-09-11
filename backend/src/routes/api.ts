@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import type { AdminClient } from "../lib/supabase.js";
 import { assessmentRoutes } from "./assessments.js";
 import { onboardingRoutes } from "./onboarding.js";
+import { documentRoutes } from "./documents.js";
 import { computeReadingProfile } from "../lib/readingProfile.js";
 import { fetchBook, fetchProviderText } from "../lib/wolneLektury.js";
 import { parseCatalog, searchCatalog } from "../lib/providerCatalog.js";
@@ -9,6 +10,7 @@ export function apiRoutes(client: AdminClient) {
   const router = Router();
   router.use("/onboarding", onboardingRoutes(client));
   router.use("/assessments", assessmentRoutes(client));
+  router.use("/documents", documentRoutes(client));
   router.get("/profile", async (_req, res) => {
     try {
       const profile = await computeReadingProfile(

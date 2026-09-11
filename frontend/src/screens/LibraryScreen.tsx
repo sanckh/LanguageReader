@@ -77,6 +77,9 @@ function LibraryController({ signedIn }: { signedIn: boolean }) {
         setSelection((value) => ({ ...value, revision: value.revision + 1 }))
       }
       onSignIn={() => navigation.navigate('Account')}
+      onOpenDocument={(documentId) =>
+        navigation.navigate('Reader', { documentId })
+      }
     />
   );
 }

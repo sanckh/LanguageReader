@@ -57,9 +57,13 @@ export async function searchProviderBooks(
   return result.books;
 }
 
-export async function importProviderBook(slug: string): Promise<void> {
-  await apiFetch('/api/library/provider/import', {
-    method: 'POST',
-    body: JSON.stringify({ slug, level: null, topic: null }),
-  });
+export async function importProviderBook(slug: string): Promise<string> {
+  const result = await apiFetch<{ book: { id: string } }>(
+    '/api/library/provider/import',
+    {
+      method: 'POST',
+      body: JSON.stringify({ slug, level: null, topic: null }),
+    },
+  );
+  return result.book.id;
 }

@@ -46,3 +46,13 @@ export interface DocumentMetaResponse {
 export interface SectionsResponse {
   sections: DocumentSectionDto[];
 }
+
+export interface DocumentOpening {
+  document: DocumentMetaDto;
+  sections: DocumentSectionDto[];
+}
+
+export interface OpenProviderResponse {
+  book: { id: string };
+  opening?: DocumentOpening;
+}

@@ -67,6 +67,29 @@ function toMeta(doc: DocumentRow): DocumentMetaDto {
   };
 }
 
+export async function readIncludedOpening(client: AdminClient, id: string) {
+  const [document, sections] = await Promise.all([
+    client
+      .from("document")
+      .select(DOCUMENT_COLUMNS)
+      .eq("id", id)
+      .eq("is_included_library", true)
+      .eq("status", "ready")
+      .single(),
+    client
+      .from("document_section")
+      .select("id, position, kind, body")
+      .eq("document_id", id)
+      .order("position")
+      .limit(6),
+  ]);
+  if (document.error || sections.error) throw new Error("Opening unavailable");
+  return {
+    document: toMeta(document.data as DocumentRow),
+    sections: sections.data as DocumentSectionDto[],
+  };
+}
+
 export async function readDocument(
   client: AdminClient,
   authUserId: string,

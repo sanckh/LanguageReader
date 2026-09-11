@@ -30,6 +30,9 @@ import type {
 } from '../interfaces/document';
 import type { MeasuredBlock, PlacedBlock, ReaderPage } from '../models/reader';
 import { paginate } from '../reader/pagination';
+import { SelectableParagraph } from '../reader/SelectableParagraph';
+import { takeOpening } from '../reader/opening';
+import { needsMoreSections } from '../reader/loading';
 import { PlaceholderScreen } from '../components/PlaceholderScreen';
 import { colors } from '../theme';
 
@@ -78,23 +81,6 @@ export function ReaderScreen() {
   return <PagedReader key={documentId} documentId={documentId} />;
 }
 
-function tokenize(body: string): string[] {
-  return body.split(/(\s+)/).filter((part) => part.length > 0);
-}
-
-// Trim surrounding punctuation while keeping Polish letters (Latin-1 + Ext-A).
-function cleanWord(token: string): string {
-  const trimmed = token.replace(/^[^0-9A-Za-zÀ-ſ]+|[^0-9A-Za-zÀ-ſ]+$/g, '');
-  return trimmed || token;
-}
-
-// Heuristic sentence split; a language module can replace it later per language.
-function splitSentences(body: string): string[] {
-  return body.match(/[^.!?…]+[.!?…]*\s*/g) ?? [body];
-}
-
-type Selection = { kind: 'word' | 'sentence'; text: string };
-
 function topMarginFor(kind: DocumentSectionDto['kind']): number {
   return kind === 'heading' ? HEADING_MARGIN : PARAGRAPH_MARGIN;
 }
@@ -102,15 +88,22 @@ function topMarginFor(kind: DocumentSectionDto['kind']): number {
 function PagedReader({ documentId }: { documentId: string }) {
   const { width: windowWidth } = useWindowDimensions();
 
-  const [meta, setMeta] = useState<DocumentMetaDto | null>(null);
+  const [opening] = useState(() => takeOpening(documentId));
+  const [meta, setMeta] = useState<DocumentMetaDto | null>(
+    opening?.document ?? null,
+  );
   const [totalSections, setTotalSections] = useState(0);
   const [saved, setSaved] = useState<SavedPosition | null>(null);
-  const [sections, setSections] = useState<DocumentSectionDto[]>([]);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(
-    'loading',
+  const [sections, setSections] = useState<DocumentSectionDto[]>(
+    opening?.sections ?? [],
   );
-  const [selected, setSelected] = useState<Selection | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(
+    opening ? 'ready' : 'loading',
+  );
   const [currentPage, setCurrentPage] = useState(0);
+  const [batchError, setBatchError] = useState(false);
+  const [metadataError, setMetadataError] = useState(false);
+  const [openRevision, setOpenRevision] = useState(0);
 
   // Measured heights keyed by section id, tagged with the width they were
   // measured at. A width change (rotation/resize) invalidates every height, so
@@ -126,7 +119,7 @@ function PagedReader({ documentId }: { documentId: string }) {
   } | null>(null);
 
   const listRef = useRef<FlatList<ReaderPage>>(null);
-  const loadedCount = useRef(0);
+  const loadedCount = useRef(opening?.sections.length ?? 0);
   const loadingMore = useRef(false);
   const restored = useRef(false);
   const lastSavedSection = useRef<string | null>(null);
@@ -152,9 +145,12 @@ function PagedReader({ documentId }: { documentId: string }) {
       try {
         const [metaResult, first] = await Promise.all([
           getDocumentMeta(documentId),
-          getSections(documentId, 0, BATCH),
+          opening
+            ? Promise.resolve({ sections: opening.sections })
+            : getSections(documentId, 0, 6),
         ]);
         if (!active) return;
+        setMetadataError(false);
         setMeta(metaResult.document);
         setTotalSections(metaResult.totalSections);
         setSaved(metaResult.position);
@@ -162,14 +158,17 @@ function PagedReader({ documentId }: { documentId: string }) {
         loadedCount.current = first.sections.length;
         setStatus('ready');
       } catch {
-        if (active) setStatus('error');
+        if (active) {
+          if (opening) setMetadataError(true);
+          else setStatus('error');
+        }
       }
     })();
     return () => {
       active = false;
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [documentId]);
+  }, [documentId, openRevision, opening]);
 
   const orderedBlocks = useMemo<MeasuredBlock[]>(() => {
     if (!meta) return [];
@@ -207,35 +206,61 @@ function PagedReader({ documentId }: { documentId: string }) {
     orderedBlocks.length > 0 &&
     orderedBlocks.every((b) => heights[b.sectionId] !== undefined);
 
-  // Load the next batch when the reader nears the end of what's measured.
+  // Yield between batches so reading remains responsive during background loading.
   useEffect(() => {
     if (
       status !== 'ready' ||
+      batchError ||
       loadingMore.current ||
       loadedCount.current >= totalSections ||
+      !needsMoreSections(
+        currentPage,
+        pages.length,
+        sections.length,
+        totalSections,
+        restored.current ? undefined : saved?.sectionPosition,
+      ) ||
       pages.length === 0 ||
-      currentPage < pages.length - 2 ||
       !allMeasured
     ) {
       return;
     }
     loadingMore.current = true;
-    (async () => {
-      try {
-        const next = await getSections(documentId, loadedCount.current, BATCH);
-        loadedCount.current += next.sections.length;
-        setSections((prev) => [...prev, ...next.sections]);
-      } catch {
-        // A failed batch simply leaves the reader where it is; it retries on
-        // the next page turn.
-      } finally {
-        loadingMore.current = false;
-      }
-    })();
+    let active = true;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const next = await getSections(
+            documentId,
+            loadedCount.current,
+            BATCH,
+          );
+          if (!active) return;
+          if (next.sections.length === 0) {
+            setTotalSections(loadedCount.current);
+            return;
+          }
+          loadedCount.current += next.sections.length;
+          setSections((prev) => [...prev, ...next.sections]);
+        } catch {
+          if (active) setBatchError(true);
+        } finally {
+          loadingMore.current = false;
+        }
+      })();
+    }, 150);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      loadingMore.current = false;
+    };
   }, [
     status,
     currentPage,
+    saved,
+    batchError,
     pages.length,
+    sections.length,
     allMeasured,
     totalSections,
     documentId,
@@ -339,16 +364,35 @@ function PagedReader({ documentId }: { documentId: string }) {
     );
   }
 
+  const sampleCount = Math.min(31, totalSections);
+  const sample = orderedBlocks.slice(0, sampleCount + 1);
+  const sampleReady =
+    sampleCount > 0 &&
+    sample.length === sampleCount + 1 &&
+    sample.every((block) => heights[block.sectionId] !== undefined);
+  const estimate =
+    sampleReady && packHeight > 0
+      ? Math.round(
+          (paginate(sample, packHeight).length * totalSections) / sampleCount,
+        )
+      : 0;
   const progress = progressFor(
     currentPage,
     pages.length,
     sections.length,
     totalSections,
+    estimate,
+    allMeasured,
   );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <View style={styles.viewport} onLayout={onViewportLayout}>
+      {/* Mount separately from the loading view so web attaches its layout observer. */}
+      <View
+        key="reader-viewport"
+        style={styles.viewport}
+        onLayout={onViewportLayout}
+      >
         {viewport && contentWidth > 0 && (
           <MeasureLayer
             blocks={orderedBlocks}
@@ -377,6 +421,7 @@ function PagedReader({ documentId }: { documentId: string }) {
           <FlatList
             ref={listRef}
             data={pages}
+            extraData={`${currentPage}:${contentWidth}`}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
@@ -393,7 +438,7 @@ function PagedReader({ documentId }: { documentId: string }) {
                 page={item}
                 meta={meta}
                 width={pageWidth}
-                onSelect={setSelected}
+                selectionKey={`${currentPage}:${contentWidth}`}
               />
             )}
           />
@@ -421,32 +466,32 @@ function PagedReader({ documentId }: { documentId: string }) {
         )}
       </View>
 
-      {selected ? (
-        <View style={styles.helpBar}>
-          <Text
-            style={styles.helpWord}
-            numberOfLines={selected.kind === 'sentence' ? 3 : 1}
-          >
-            {selected.text}
+      {metadataError && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setOpenRevision((value) => value + 1)}
+          style={styles.retryBatch}
+        >
+          <Text style={styles.errorText}>
+            Reading progress couldn’t load. Tap to retry.
           </Text>
-          <Text style={styles.helpNote}>
-            {selected.kind === 'word'
-              ? 'Word help arrives with the language engine.'
-              : 'Sentence help arrives with the language engine.'}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setSelected(null)}
-          >
-            <Text style={styles.helpClose}>Close</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <Animated.View style={[styles.footer, { opacity: footerOpacity }]}>
-          <Text style={styles.footerText}>{progress.label}</Text>
-          <Text style={styles.footerText}>{progress.remaining}</Text>
-        </Animated.View>
+        </Pressable>
       )}
+      {batchError && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setBatchError(false)}
+          style={styles.retryBatch}
+        >
+          <Text style={styles.errorText}>
+            More pages couldn’t load. Tap to retry.
+          </Text>
+        </Pressable>
+      )}
+      <Animated.View style={[styles.footer, { opacity: footerOpacity }]}>
+        <Text style={styles.footerText}>{progress.label}</Text>
+        <Text style={styles.footerText}>{progress.remaining}</Text>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -456,23 +501,29 @@ function progressFor(
   loadedPages: number,
   loadedSections: number,
   totalSections: number,
+  estimate: number,
+  allMeasured: boolean,
 ): { label: string; remaining: string } {
   if (loadedPages === 0) return { label: '', remaining: '' };
-  // Estimate the full length from the density of pages per loaded section.
-  const estimatedTotal =
-    totalSections > 0 && loadedSections > 0
-      ? Math.max(
-          loadedPages,
-          Math.round(loadedPages * (totalSections / loadedSections)),
-        )
-      : loadedPages;
+  if (totalSections === 0 || estimate === 0)
+    return {
+      label: `Page ${currentPage + 1}`,
+      remaining: 'Calculating book length…',
+    };
+  const complete = loadedSections >= totalSections && allMeasured;
+  const estimatedTotal = complete
+    ? loadedPages
+    : Math.max(loadedPages, estimate);
+  const approximate = complete ? '' : 'about ';
   const human = currentPage + 1;
   const percent = Math.min(100, Math.round((human / estimatedTotal) * 100));
   const pagesLeft = Math.max(0, estimatedTotal - human);
   return {
-    label: `Page ${human} of ${estimatedTotal}  ·  ${percent}%`,
+    label: `Page ${human} of ${approximate}${estimatedTotal}  ·  ${percent}%`,
     remaining:
-      pagesLeft === 0 ? 'End of book' : `${pagesLeft} pages left in book`,
+      pagesLeft === 0 && complete
+        ? 'End of book'
+        : `${approximate}${pagesLeft} pages left in book`,
   };
 }
 
@@ -489,7 +540,9 @@ function MeasureLayer({
   known: Record<string, number>;
   onMeasured: (id: string, height: number) => void;
 }) {
-  const pending = blocks.filter((b) => known[b.sectionId] === undefined);
+  const pending = blocks
+    .filter((b) => known[b.sectionId] === undefined)
+    .slice(0, 6);
   if (pending.length === 0) return null;
   return (
     <View
@@ -521,12 +574,12 @@ function PageView({
   page,
   meta,
   width,
-  onSelect,
+  selectionKey,
 }: {
   page: ReaderPage;
   meta: DocumentMetaDto;
   width: number;
-  onSelect: (selection: Selection) => void;
+  selectionKey: string;
 }) {
   return (
     <View style={[styles.page, { width }]}>
@@ -542,7 +595,7 @@ function PageView({
               text={block.text}
               continuation={block.continuation}
               meta={meta}
-              onSelect={onSelect}
+              selectionKey={selectionKey}
             />
           </View>
         ))}
@@ -564,14 +617,14 @@ function BlockBody({
   text,
   continuation,
   meta,
-  onSelect,
+  selectionKey,
 }: {
   sectionId: string;
   kind: DocumentSectionDto['kind'];
   text: string;
   continuation: boolean;
   meta: DocumentMetaDto;
-  onSelect?: (selection: Selection) => void;
+  selectionKey?: string;
 }) {
   if (sectionId === COVER_ID) {
     return (
@@ -588,33 +641,14 @@ function BlockBody({
   if (kind === 'heading') {
     return <Text style={styles.heading}>{text}</Text>;
   }
-  const select = onSelect ?? (() => undefined);
-  // Nesting: paragraph > sentence (long-press) > word (tap).
-  return (
-    <Text style={styles.paragraph}>
-      {splitSentences(text).map((sentence, sentenceIndex) => (
-        <Text
-          key={sentenceIndex}
-          onLongPress={() =>
-            select({ kind: 'sentence', text: sentence.trim() })
-          }
-        >
-          {tokenize(sentence).map((part, index) =>
-            /\s/.test(part) ? (
-              part
-            ) : (
-              <Text
-                key={index}
-                style={styles.word}
-                onPress={() => select({ kind: 'word', text: cleanWord(part) })}
-              >
-                {part}
-              </Text>
-            ),
-          )}
-        </Text>
-      ))}
-    </Text>
+  return selectionKey === undefined ? (
+    <Text style={styles.paragraph}>{text}</Text>
+  ) : (
+    <SelectableParagraph
+      key={selectionKey}
+      text={text}
+      width={MAX_CONTENT_WIDTH - CONTENT_PADDING * 2}
+    />
   );
 }
 
@@ -628,6 +662,7 @@ const styles = StyleSheet.create({
     padding: 28,
   },
   errorText: { color: colors.muted, fontSize: 16, textAlign: 'center' },
+  retryBatch: { padding: 12, minHeight: 44 },
   measureLayer: {
     position: 'absolute',
     left: 0,

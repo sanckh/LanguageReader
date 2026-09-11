@@ -1,11 +1,15 @@
 import express, { Router } from "express";
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
 import type { AdminClient } from "../lib/supabase.js";
 import { assessmentRoutes } from "./assessments.js";
 import { onboardingRoutes } from "./onboarding.js";
 import { documentRoutes } from "./documents.js";
+import { readIncludedOpening } from "../lib/documents.js";
 import { computeReadingProfile } from "../lib/readingProfile.js";
-import { fetchBook, fetchProviderText } from "../lib/wolneLektury.js";
-import { parseCatalog, searchCatalog } from "../lib/providerCatalog.js";
+import { bookSlug, fetchBook } from "../lib/wolneLektury.js";
+import { getProviderCatalog, searchCatalog } from "../lib/providerCatalog.js";
+const compress = promisify(gzip);
 export function apiRoutes(client: AdminClient) {
   const router = Router();
   router.use("/onboarding", onboardingRoutes(client));
@@ -57,13 +61,15 @@ export function apiRoutes(client: AdminClient) {
       return;
     }
     try {
-      const response = JSON.parse(
-        await fetchProviderText(
-          "https://wolnelektury.pl/api/books/?format=json",
-        ),
-      ) as unknown;
-      const books = searchCatalog(parseCatalog(response), query);
-      res.json({ books });
+      const books = searchCatalog(await getProviderCatalog(), query);
+      res.vary("Accept-Encoding");
+      if (req.acceptsEncodings("gzip")) {
+        const body = await compress(JSON.stringify({ books }));
+        res.setHeader("Content-Encoding", "gzip");
+        res.type("json").send(body);
+      } else {
+        res.json({ books });
+      }
     } catch {
       res.status(503).json({ error: "provider_unavailable" });
     }
@@ -90,6 +96,20 @@ export function apiRoutes(client: AdminClient) {
         return;
       }
       try {
+        const existing = await client
+          .from("document")
+          .select("id")
+          .eq("provider", "wolne-lektury")
+          .eq("provider_book_id", bookSlug(slug))
+          .eq("is_included_library", true)
+          .eq("status", "ready")
+          .maybeSingle();
+        if (existing.error) throw existing.error;
+        if (existing.data) {
+          const opening = await readIncludedOpening(client, existing.data.id);
+          res.json({ book: existing.data, opening });
+          return;
+        }
         const prepared = await fetchBook({ book: slug, level, topic });
         const { data, error } = await client.rpc("import_wolne_lektury_book", {
           book: prepared.book,
@@ -97,7 +117,8 @@ export function apiRoutes(client: AdminClient) {
           refresh: false,
         });
         if (error) throw error;
-        res.status(201).json({ book: data });
+        const opening = await readIncludedOpening(client, data.id);
+        res.status(201).json({ book: data, opening });
       } catch {
         res.status(503).json({ error: "book_import_failed" });
       }

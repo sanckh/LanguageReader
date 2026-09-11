@@ -310,7 +310,9 @@ export async function fetchBook(
       ),
     ) as unknown,
   );
-  const html = await fetchProviderText(details.html, fetcher);
-  const txt = await fetchProviderText(details.txt, fetcher);
+  const [html, txt] = await Promise.all([
+    fetchProviderText(details.html, fetcher),
+    fetchProviderText(details.txt, fetcher),
+  ]);
   return prepareBook(selection, details, html, txt);
 }

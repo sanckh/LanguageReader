@@ -3,33 +3,46 @@ import type { LibraryScope } from '../models/library';
 import { getSupabase } from '../lib/supabase';
 import { apiFetch } from '../lib/api';
 import type { ProviderBookResult } from '../interfaces/providerLibrary';
+import type { OpenProviderResponse } from '../interfaces/document';
+import { rememberOpening } from '../reader/opening';
+
+let catalog: Promise<LibraryBook[]> | undefined;
+let catalogExpires = 0;
 
 export async function getLibrary(
   scope: LibraryScope,
   signal: AbortSignal,
 ): Promise<LibraryBook[]> {
   if ((scope as LibraryScope) === 'included') {
-    const result = await apiFetch<{ books: ProviderBookResult[] }>(
-      '/api/library/provider?q=',
-    );
-    return result.books.map((book) => ({
-      id: `wolne-lektury:${book.href}`,
-      title: book.title,
-      authors: book.author ? [book.author] : [],
-      translators: [],
-      level: null,
-      topic: book.genre || null,
-      kind: book.kind,
-      epoch: book.epoch,
-      word_count: null,
-      source: book.url || book.href,
-      attribution: 'Książka pochodzi z serwisu Wolne Lektury.',
-      license: null,
-      source_notice: null,
-      modification_notice: null,
-      source_download_url: null,
-      provider: 'wolne-lektury',
-    }));
+    if (catalog && Date.now() < catalogExpires) return catalog;
+    catalogExpires = Date.now() + 5 * 60_000;
+    catalog = (async () => {
+      const result = await apiFetch<{ books: ProviderBookResult[] }>(
+        '/api/library/provider?q=',
+      );
+      return result.books.map((book) => ({
+        id: `wolne-lektury:${book.href}`,
+        title: book.title,
+        authors: book.author ? [book.author] : [],
+        translators: [],
+        level: null,
+        topic: book.genre || null,
+        kind: book.kind,
+        epoch: book.epoch,
+        word_count: null,
+        source: book.url || book.href,
+        attribution: 'Książka pochodzi z serwisu Wolne Lektury.',
+        license: null,
+        source_notice: null,
+        modification_notice: null,
+        source_download_url: null,
+        provider: 'wolne-lektury',
+      }));
+    })().catch((error) => {
+      catalog = undefined;
+      throw error;
+    });
+    return catalog;
   }
   const client = getSupabase();
   if (!client) throw new Error('Library connection is unavailable.');
@@ -58,12 +71,13 @@ export async function searchProviderBooks(
 }
 
 export async function importProviderBook(slug: string): Promise<string> {
-  const result = await apiFetch<{ book: { id: string } }>(
+  const result = await apiFetch<OpenProviderResponse>(
     '/api/library/provider/import',
     {
       method: 'POST',
       body: JSON.stringify({ slug, level: null, topic: null }),
     },
   );
+  if (result.opening) rememberOpening(result.opening);
   return result.book.id;
 }

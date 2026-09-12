@@ -1,5 +1,16 @@
 import type { SelectionRange } from '../models/selectionRange';
 
+export function sentenceRange(tokens: string[], index: number): SelectionRange {
+  let start = index;
+  let end = index;
+  const endsSentence = (text: string) => /[.!?…]["'”’»)]*$/.test(text);
+  while (start > 0 && !endsSentence(tokens[start - 1] ?? '')) start--;
+  while (end < tokens.length - 1 && !endsSentence(tokens[end] ?? '')) end++;
+  while (start < end && !tokens[start]?.trim()) start++;
+  while (end > start && !tokens[end]?.trim()) end--;
+  return { start, end };
+}
+
 export function toggleWord(
   tokens: string[],
   previous: SelectionRange | null,

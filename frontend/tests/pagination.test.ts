@@ -17,6 +17,15 @@ function pageText(page: ReaderPage): string {
   return page.blocks.map((b) => b.text).join('');
 }
 
+test('split paragraphs retain Unicode offsets into the original section', () => {
+  const full = 'Żółw 🐢 czyta książkę. '.repeat(50).trim();
+  const pages = paginate([para('offsets', full, 900, 0)], 200);
+  for (const block of pages.flatMap(page => page.blocks)) {
+    assert.ok([...full].slice(block.characterOffset ?? 0).join('').startsWith(block.text));
+  }
+  assert.ok((pages[1]?.blocks[0]?.characterOffset ?? 0) > 0);
+});
+
 test('packs whole blocks until the viewport fills', () => {
   const pages = paginate(
     [para('a', 'AAA', 100, 0), para('b', 'BBB', 100), para('c', 'CCC', 100)],

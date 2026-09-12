@@ -9,6 +9,7 @@ import { readIncludedOpening } from "../lib/documents.js";
 import { computeReadingProfile } from "../lib/readingProfile.js";
 import { bookSlug, fetchBook } from "../lib/wolneLektury.js";
 import { getProviderCatalog, searchCatalog } from "../lib/providerCatalog.js";
+import { getProfile } from "../lib/profile.js";
 const compress = promisify(gzip);
 export function apiRoutes(client: AdminClient) {
   const router = Router();
@@ -96,6 +97,35 @@ export function apiRoutes(client: AdminClient) {
         return;
       }
       try {
+        const privateLibrary = req.body?.scope === "private";
+        if (
+          req.body?.scope !== undefined &&
+          !["private", "included"].includes(req.body.scope)
+        ) {
+          res.status(400).json({ error: "invalid_scope" });
+          return;
+        }
+        const finish = async (id: string, status: number) => {
+          if (privateLibrary) {
+            const profile = await getProfile(
+              client,
+              res.locals.userId as string,
+            );
+            if (!profile) {
+              res.status(403).json({ error: "profile_required" });
+              return;
+            }
+            const saved = await client.rpc("save_provider_book", {
+              source_id: id,
+              learner_id: profile.id,
+            });
+            if (saved.error) throw saved.error;
+            res.status(status).json({ book: { id: saved.data } });
+          } else {
+            const opening = await readIncludedOpening(client, id);
+            res.status(status).json({ book: { id }, opening });
+          }
+        };
         const existing = await client
           .from("document")
           .select("id")
@@ -106,8 +136,7 @@ export function apiRoutes(client: AdminClient) {
           .maybeSingle();
         if (existing.error) throw existing.error;
         if (existing.data) {
-          const opening = await readIncludedOpening(client, existing.data.id);
-          res.json({ book: existing.data, opening });
+          await finish(existing.data.id, 200);
           return;
         }
         const prepared = await fetchBook({ book: slug, level, topic });
@@ -117,8 +146,7 @@ export function apiRoutes(client: AdminClient) {
           refresh: false,
         });
         if (error) throw error;
-        const opening = await readIncludedOpening(client, data.id);
-        res.status(201).json({ book: data, opening });
+        await finish(data.id, 201);
       } catch {
         res.status(503).json({ error: "book_import_failed" });
       }

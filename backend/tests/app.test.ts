@@ -4,12 +4,67 @@ import type { AddressInfo } from "node:net";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config/env.js";
 import { createAdminClient } from "../src/lib/supabase.js";
+import { createClient } from "@supabase/supabase-js";
 const env = {
   APP_ENV: "development",
   SUPABASE_URL: "http://127.0.0.1:55321",
   SUPABASE_SERVICE_ROLE_KEY: "sb_secret_test",
   CORS_ORIGINS: "http://localhost:8081",
 };
+test("private provider saves derive ownership from the authenticated profile", async () => {
+  const client = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    global: {
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        let data: unknown;
+        if (url.pathname.endsWith("/document")) data = { id: "shared-book" };
+        else if (url.pathname.endsWith("/user_profile")) {
+          assert.equal(
+            url.searchParams.get("auth_user_id"),
+            "eq.verified-user",
+          );
+          data = { id: "verified-profile" };
+        } else {
+          assert.ok(url.pathname.endsWith("/rpc/save_provider_book"));
+          assert.deepEqual(JSON.parse(String(init?.body)), {
+            source_id: "shared-book",
+            learner_id: "verified-profile",
+          });
+          data = "private-book";
+        }
+        return new Response(JSON.stringify(data), {
+          headers: { "content-type": "application/json" },
+        });
+      },
+    },
+  });
+  const server = createApp(loadConfig(env), client, async () => ({
+    id: "verified-user",
+  })).listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/library/provider/import`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer valid",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          slug: "sample",
+          scope: "private",
+          owner_id: "someone-else",
+        }),
+      },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { book: { id: "private-book" } });
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
 test("configuration fails closed without server credentials or valid origins", () => {
   for (const overrides of [
     { SUPABASE_SERVICE_ROLE_KEY: "" },

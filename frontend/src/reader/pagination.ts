@@ -38,6 +38,7 @@ export function paginate(
 
   for (const block of blocks) {
     let text = block.text;
+    let characterOffset = 0;
     let continuation = false;
     // Margin applies only when the block isn't the first item on its page.
     let margin = current.length === 0 ? 0 : block.topMargin;
@@ -68,6 +69,7 @@ export function paginate(
           kind: 'paragraph',
           text,
           continuation,
+          characterOffset,
         });
         used += margin + remainingHeight;
         break;
@@ -86,8 +88,10 @@ export function paginate(
           kind: 'paragraph',
           text: head,
           continuation,
+          characterOffset,
         });
         remainingHeight -= headHeight;
+        characterOffset += [...text.slice(0, text.length - tail.length)].length;
         text = tail;
         continuation = true;
       }

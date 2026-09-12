@@ -70,12 +70,15 @@ export async function searchProviderBooks(
   return result.books;
 }
 
-export async function importProviderBook(slug: string): Promise<string> {
+export async function importProviderBook(
+  slug: string,
+  scope: LibraryScope = 'included',
+): Promise<string> {
   const result = await apiFetch<OpenProviderResponse>(
     '/api/library/provider/import',
     {
       method: 'POST',
-      body: JSON.stringify({ slug, level: null, topic: null }),
+      body: JSON.stringify({ slug, level: null, topic: null, scope }),
     },
   );
   if (result.opening) rememberOpening(result.opening);

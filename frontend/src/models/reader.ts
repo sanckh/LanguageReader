@@ -16,6 +16,7 @@ export interface MeasuredBlock {
 // placed block may cover only part of the source text; `continuation` marks a
 // fragment whose paragraph began on an earlier page (render with no indent).
 export interface PlacedBlock {
+  characterOffset?: number;
   sectionId: string;
   kind: SectionKind;
   text: string;

@@ -336,7 +336,7 @@ export function LibraryView({
               {books.length
                 ? 'Try another search, literary kind, or genre.'
                 : scope === 'private'
-                  ? 'Your personal EPUB, PDF, and text files will belong here. Book uploads are coming soon.'
+                  ? 'Find a book in Included Library and choose Add to My Library to keep it here. Personal file uploads are coming soon.'
                   : 'Our first Polish readings will appear here when they’re ready.'}
             </Text>
             {books.length > 0 && (
@@ -552,6 +552,24 @@ function BookDetails({
 }) {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const save = async () => {
+    setSaving(true);
+    setLinkError(null);
+    try {
+      setSavedId(
+        await importProviderBook(
+          book.id.slice(PROVIDER_PREFIX.length),
+          'private',
+        ),
+      );
+    } catch {
+      setLinkError('We couldn’t save this book. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
   const original = sourceLink(book.source),
     download = sourceLink(book.source_download_url);
   const open = async (url: string) => {
@@ -570,7 +588,8 @@ function BookDetails({
         const slug = book.id.startsWith(PROVIDER_PREFIX)
           ? book.id.slice(PROVIDER_PREFIX.length)
           : null;
-        const documentId = slug ? await importProviderBook(slug) : book.id;
+        const documentId =
+          savedId ?? (slug ? await importProviderBook(slug) : book.id);
         onOpenDocument(documentId);
         onClose();
       } catch {
@@ -632,7 +651,7 @@ function BookDetails({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Read in the app"
-            disabled={opening}
+            disabled={opening || saving}
             onPress={read}
             style={styles.primary}
           >
@@ -640,6 +659,22 @@ function BookDetails({
               {opening ? 'Opening…' : 'Read in the app'}
             </Text>
           </Pressable>
+          {book.id.startsWith(PROVIDER_PREFIX) && (
+            <Pressable
+              accessibilityRole="button"
+              disabled={saving || opening || Boolean(savedId)}
+              onPress={() => void save()}
+              style={styles.secondary}
+            >
+              <Text style={styles.link}>
+                {saving
+                  ? 'Adding…'
+                  : savedId
+                    ? '✓ Added to My Library'
+                    : '+ Add to My Library'}
+              </Text>
+            </Pressable>
+          )}
           {original && (
             <Pressable
               accessibilityRole="link"

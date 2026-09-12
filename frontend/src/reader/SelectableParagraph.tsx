@@ -1,45 +1,65 @@
 import { useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import type { TextSelection } from '../models/textSelection';
-import { toggleWord } from './selection';
+import { sentenceRange, toggleWord } from './selection';
+import { useReaderBounds, useReadingMode } from './ReadingMode';
+import { SelectionHelp } from './SelectionHelp';
 import { colors } from '../theme';
 
 export function SelectableParagraph({
   text,
   width,
+  sectionId,
+  characterOffset,
 }: {
   text: string;
   width: number;
+  sectionId: string;
+  characterOffset: number;
 }) {
   const container = useRef<View>(null);
+  const mode = useReadingMode();
+  const readerBounds = useReaderBounds();
+  const held = useRef(false);
   const words = useRef<Record<number, Text | null>>({});
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const [bubbleHeight, setBubbleHeight] = useState(36);
   const [measuredWidth, setMeasuredWidth] = useState(width);
   const tokens = text.split(/(\s+)/);
-  const select = (index: number) => {
+  const select = (index: number, sentence = false) => {
     const node = words.current[index];
     if (!node || !container.current) return;
     node.measureInWindow((x, y, wordWidth, height) => {
       container.current?.measureInWindow((parentX, parentY) => {
-        setSelection((previous) => {
-          const range = toggleWord(tokens, previous, index);
-          return range
-            ? {
-                ...range,
-                x: x - parentX + wordWidth / 2,
-                y: y - parentY,
-                height,
-                minY: 8 - parentY,
-              }
-            : null;
-        });
+        const applySelection = (readerTop: number) => {
+          setSelection((previous) => {
+            const range = sentence
+              ? sentenceRange(tokens, index)
+              : toggleWord(tokens, previous, index);
+            return range
+              ? {
+                  ...range,
+                  x: x - parentX + wordWidth / 2,
+                  y: y - parentY,
+                  height,
+                  minY: readerTop + 8 - parentY,
+                }
+              : null;
+          });
+        };
+        if (readerBounds?.current) {
+          readerBounds.current.measureInWindow((_x, readerTop) =>
+            applySelection(readerTop),
+          );
+        } else {
+          applySelection(parentY);
+        }
       });
     });
   };
   const from = selection ? Math.min(selection.start, selection.end) : -1;
   const to = selection ? Math.max(selection.start, selection.end) : -1;
-  const bubbleWidth = Math.min(112, measuredWidth);
+  const bubbleWidth = Math.min(mode === 'learning' ? 260 : 160, measuredWidth);
   return (
     <View
       ref={container}
@@ -66,7 +86,16 @@ export function SelectableParagraph({
               accessibilityRole="button"
               accessibilityHint="Tap to translate; tap a neighboring word to extend the phrase; tap a highlighted word to clear"
               accessibilityState={{ selected: index >= from && index <= to }}
-              onPress={() => select(index)}
+              onPressIn={() => {
+                held.current = false;
+              }}
+              onLongPress={() => {
+                held.current = true;
+                select(index, true);
+              }}
+              onPress={() => {
+                if (!held.current) select(index);
+              }}
               style={
                 index >= from && index <= to ? styles.highlight : undefined
               }
@@ -96,10 +125,18 @@ export function SelectableParagraph({
                   : selection.y + selection.height + 8,
             },
           ]}
-          pointerEvents="none"
           accessibilityLiveRegion="polite"
         >
-          <Text style={styles.selectedText}>translation</Text>
+          <SelectionHelp
+            key={`${mode}:${from}:${to}`}
+            anchor={{
+              section_id: sectionId,
+              start_offset:
+                characterOffset + [...tokens.slice(0, from).join('')].length,
+              end_offset:
+                characterOffset + [...tokens.slice(0, to + 1).join('')].length,
+            }}
+          />
         </View>
       )}
     </View>

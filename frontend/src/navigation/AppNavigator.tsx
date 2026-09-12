@@ -4,20 +4,29 @@ import { AccountScreen } from '../screens/AccountScreen';
 import { LearnerScreen } from '../screens/LearnerScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { ReaderScreen } from '../screens/ReaderScreen';
+import { HomeScreen } from '../screens/HomeScreen';
+import type { LibraryScope } from '../models/library';
 import { colors } from '../theme';
 
 export type RootTabParamList = {
+  Home: undefined;
   Reader: { documentId?: string } | undefined;
-  Library: undefined;
+  Library: { scope?: LibraryScope } | undefined;
   Learner: undefined;
   Account: undefined;
 };
 const Tab = createBottomTabNavigator<RootTabParamList>();
-const symbols = { Reader: 'Aa', Library: '▤', Learner: '◒', Account: '○' };
+const symbols = {
+  Home: '⌂',
+  Reader: 'Aa',
+  Library: '▤',
+  Learner: '◒',
+  Account: '○',
+};
 export function AppNavigator() {
   return (
     <Tab.Navigator
-      initialRouteName="Reader"
+      initialRouteName="Home"
       backBehavior="history"
       screenOptions={({ route }) => ({
         headerShown: false,
@@ -35,6 +44,7 @@ export function AppNavigator() {
         ),
       })}
     >
+      <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Reader" component={ReaderScreen} />
       <Tab.Screen name="Library" component={LibraryScreen} />
       <Tab.Screen name="Learner" component={LearnerScreen} />

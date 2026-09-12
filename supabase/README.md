@@ -1,5 +1,26 @@
 # Supabase setup
 
+## Private library and reader state — September 12, 2026
+
+`20260912000100_reader_state.sql` adds owner-scoped reader settings and passage
+assistance. Anchors use section UUIDs and Unicode code-point offsets; replacing
+a section removes its old assistance through a cascading foreign key. Attempts
+and reveal state are live consumers. Translation and vocabulary-help columns
+are ready for future assistance providers; the placeholder is not stored as a
+translation. Client upserts use authenticated RLS and serialize writes within
+the reader. Sync failures show a retry action; offline persistence is not included.
+
+`20260912000200_private_provider_library.sql` adds the service-only
+`save_provider_book` RPC. It atomically copies a shared provider edition into an
+owner's private document, retains credits and sections, and transfers that user's
+existing position and assistance to the new section IDs. Repeated saves reuse the
+private copy. Its source/provider pairing is language-agnostic. The backend derives
+the owner from the verified session; clients cannot choose another owner.
+
+Both migrations were applied to the existing linked project on September 12,
+2026. The embedded Postgres suite covers isolation, duplicate saves, copied
+progress, retakes, invalid ranges, and section replacement.
+
 ## Cards 07–09: learner, content/activity, and assessment schema
 
 Apply migrations in filename order after card 06:

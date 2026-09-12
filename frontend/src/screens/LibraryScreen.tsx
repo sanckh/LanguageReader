@@ -1,5 +1,10 @@
 import { useCallback, useState } from 'react';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useAuth } from '../auth/AuthProvider';
 import { LibraryView } from '../library/LibraryView';
@@ -10,18 +15,27 @@ import type { RootTabParamList } from '../navigation/AppNavigator';
 
 export function LibraryScreen() {
   const { session } = useAuth();
+  const route = useRoute<RouteProp<RootTabParamList, 'Library'>>();
+  const initialScope = route.params?.scope ?? 'included';
   return (
     <LibraryController
-      key={session?.user.id ?? 'signed-out'}
+      key={`${session?.user.id ?? 'signed-out'}:${initialScope}`}
+      initialScope={initialScope}
       signedIn={Boolean(session)}
     />
   );
 }
 
-function LibraryController({ signedIn }: { signedIn: boolean }) {
+function LibraryController({
+  signedIn,
+  initialScope,
+}: {
+  signedIn: boolean;
+  initialScope: LibraryScope;
+}) {
   const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList>>();
   const [selection, setSelection] = useState({
-    scope: 'included' as LibraryScope,
+    scope: initialScope,
     revision: 0,
   });
   const [books, setBooks] = useState<LibraryBook[]>([]);
@@ -66,6 +80,7 @@ function LibraryController({ signedIn }: { signedIn: boolean }) {
       signedIn={signedIn}
       scope={selection.scope}
       onScopeChange={(next) => {
+        navigation.setParams({ scope: next });
         setBooks([]);
         setLoading(signedIn);
         setSelection((value) => ({

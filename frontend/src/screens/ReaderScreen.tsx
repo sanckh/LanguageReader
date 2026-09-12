@@ -32,6 +32,7 @@ import type { MeasuredBlock, PlacedBlock, ReaderPage } from '../models/reader';
 import { paginate } from '../reader/pagination';
 import { SelectableParagraph } from '../reader/SelectableParagraph';
 import { takeOpening } from '../reader/opening';
+import { ReadingModes } from '../reader/ReadingMode';
 import { needsMoreSections } from '../reader/loading';
 import { PlaceholderScreen } from '../components/PlaceholderScreen';
 import { colors } from '../theme';
@@ -78,7 +79,15 @@ export function ReaderScreen() {
       />
     );
   }
-  return <PagedReader key={documentId} documentId={documentId} />;
+  return (
+    <ReadingModes
+      key={`${session!.user.id}:${documentId}`}
+      userId={session!.user.id}
+      documentId={documentId}
+    >
+      <PagedReader documentId={documentId} />
+    </ReadingModes>
+  );
 }
 
 function topMarginFor(kind: DocumentSectionDto['kind']): number {
@@ -123,7 +132,6 @@ function PagedReader({ documentId }: { documentId: string }) {
   const loadingMore = useRef(false);
   const restored = useRef(false);
   const lastSavedSection = useRef<string | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [footerOpacity] = useState(() => new Animated.Value(0));
 
   const contentWidth =
@@ -157,6 +165,15 @@ function PagedReader({ documentId }: { documentId: string }) {
         setSections(first.sections);
         loadedCount.current = first.sections.length;
         setStatus('ready');
+        const resume = metaResult.position;
+        const initialSection = resume?.sectionId ?? first.sections[0]?.id;
+        if (initialSection) {
+          void saveReadingPosition(
+            documentId,
+            initialSection,
+            resume?.characterOffset ?? 0,
+          ).catch(() => undefined);
+        }
       } catch {
         if (active) {
           if (opening) setMetadataError(true);
@@ -166,7 +183,6 @@ function PagedReader({ documentId }: { documentId: string }) {
     })();
     return () => {
       active = false;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, [documentId, openRevision, opening]);
 
@@ -269,8 +285,12 @@ function PagedReader({ documentId }: { documentId: string }) {
   // Restore the saved position once its page exists among the measured pages.
   useEffect(() => {
     if (restored.current || !saved || pages.length === 0) return;
-    const index = pages.findIndex((page) =>
-      page.blocks.some((block) => block.sectionId === saved.sectionId),
+    const index = pages.findLastIndex((page) =>
+      page.blocks.some(
+        (block) =>
+          block.sectionId === saved.sectionId &&
+          (block.characterOffset ?? 0) <= saved.characterOffset,
+      ),
     );
     if (index < 0) return;
     restored.current = true;
@@ -294,19 +314,48 @@ function PagedReader({ documentId }: { documentId: string }) {
     return () => animation.stop();
   }, [status, pages.length, footerOpacity]);
 
+  const recordPage = useCallback(
+    (index: number) => {
+      setCurrentPage(index);
+      const anchor = pages[index]?.blocks.find(
+        (block) => block.sectionId !== COVER_ID,
+      );
+      if (!anchor) return;
+      const anchorKey = `${anchor.sectionId}:${anchor.characterOffset ?? 0}`;
+      if (anchorKey === lastSavedSection.current) return;
+      lastSavedSection.current = anchorKey;
+      void saveReadingPosition(
+        documentId,
+        anchor.sectionId,
+        anchor.characterOffset ?? 0,
+      ).catch(() => {
+        lastSavedSection.current = null;
+      });
+    },
+    [documentId, pages],
+  );
+
   const goTo = useCallback(
     (index: number) => {
       if (index < 0 || index >= pages.length) return;
       listRef.current?.scrollToIndex({ index, animated: true });
-      setCurrentPage(index);
+      recordPage(index);
     },
-    [pages.length],
+    [pages.length, recordPage],
   );
 
   // Web: arrow keys turn pages.
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const onKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA')
+      )
+        return;
       if (event.key === 'ArrowRight') goTo(currentPage + 1);
       else if (event.key === 'ArrowLeft') goTo(currentPage - 1);
     };
@@ -317,16 +366,7 @@ function PagedReader({ documentId }: { documentId: string }) {
   const onMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (pageWidth <= 0) return;
     const index = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
-    if (index === currentPage) return;
-    setCurrentPage(index);
-    const anchor = pages[index]?.blocks.find((b) => b.sectionId !== COVER_ID);
-    if (!anchor || anchor.sectionId === lastSavedSection.current) return;
-    lastSavedSection.current = anchor.sectionId;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    const sectionId = anchor.sectionId;
-    saveTimer.current = setTimeout(() => {
-      void saveReadingPosition(documentId, sectionId, 0).catch(() => undefined);
-    }, 900);
+    recordPage(index);
   };
 
   const onViewportLayout = (event: LayoutChangeEvent) => {
@@ -386,7 +426,7 @@ function PagedReader({ documentId }: { documentId: string }) {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safe} edges={['left', 'right']}>
       {/* Mount separately from the loading view so web attaches its layout observer. */}
       <View
         key="reader-viewport"
@@ -596,6 +636,7 @@ function PageView({
               continuation={block.continuation}
               meta={meta}
               selectionKey={selectionKey}
+              characterOffset={block.characterOffset ?? 0}
             />
           </View>
         ))}
@@ -618,6 +659,7 @@ function BlockBody({
   continuation,
   meta,
   selectionKey,
+  characterOffset = 0,
 }: {
   sectionId: string;
   kind: DocumentSectionDto['kind'];
@@ -625,6 +667,7 @@ function BlockBody({
   continuation: boolean;
   meta: DocumentMetaDto;
   selectionKey?: string;
+  characterOffset?: number;
 }) {
   if (sectionId === COVER_ID) {
     return (
@@ -647,6 +690,8 @@ function BlockBody({
     <SelectableParagraph
       key={selectionKey}
       text={text}
+      sectionId={sectionId}
+      characterOffset={characterOffset}
       width={MAX_CONTENT_WIDTH - CONTENT_PADDING * 2}
     />
   );

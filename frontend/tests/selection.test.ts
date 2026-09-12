@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { toggleWord } from '../src/reader/selection';
+import { sentenceRange, toggleWord } from '../src/reader/selection';
+
+test('holding a word selects its sentence without neighboring sentences', () => {
+  const tokens = 'Pierwsze zdanie. Drugie zdanie! Ostatnie'.split(/(\s+)/);
+  assert.deepEqual(sentenceRange(tokens, 4), { start: 4, end: 6 });
+  assert.deepEqual(sentenceRange(tokens, 0), { start: 0, end: 2 });
+  assert.deepEqual(sentenceRange(tokens, 8), { start: 8, end: 8 });
+});
 
 test('adjacent taps extend a phrase in either direction; tapping selected text clears it', () => {
   const tokens = 'Czas Białego Zimna i Białego'.split(/(\s+)/);

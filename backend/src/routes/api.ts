@@ -5,6 +5,7 @@ import type { AdminClient } from "../lib/supabase.js";
 import { assessmentRoutes } from "./assessments.js";
 import { onboardingRoutes } from "./onboarding.js";
 import { documentRoutes } from "./documents.js";
+import { languageRoutes } from "./language.js";
 import { readIncludedOpening } from "../lib/documents.js";
 import { computeReadingProfile } from "../lib/readingProfile.js";
 import { bookSlug, fetchBook } from "../lib/wolneLektury.js";
@@ -16,6 +17,7 @@ export function apiRoutes(client: AdminClient) {
   router.use("/onboarding", onboardingRoutes(client));
   router.use("/assessments", assessmentRoutes(client));
   router.use("/documents", documentRoutes(client));
+  router.use("/language", languageRoutes(client));
   router.get("/profile", async (_req, res) => {
     try {
       const profile = await computeReadingProfile(

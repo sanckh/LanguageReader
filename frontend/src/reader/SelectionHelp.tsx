@@ -2,12 +2,21 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useReadingMode, useReaderState } from './ReadingMode';
 import { emptyAssistance } from './stateStore';
+import { WordLookup } from './WordLookup';
 import type {
   AssistanceAnchor,
   AssistanceState,
 } from '../interfaces/readerState';
 
-export function SelectionHelp({ anchor }: { anchor: AssistanceAnchor }) {
+export function SelectionHelp({
+  anchor,
+  text,
+  isWord,
+}: {
+  anchor: AssistanceAnchor;
+  text: string;
+  isWord: boolean;
+}) {
   const mode = useReadingMode();
   const access = useReaderState();
   const [state, setState] = useState(emptyAssistance);
@@ -40,7 +49,6 @@ export function SelectionHelp({ anchor }: { anchor: AssistanceAnchor }) {
     access?.save(anchor, next);
   };
   const { attempt, revealed } = state;
-  const [expanded, setExpanded] = useState(false);
   if (!loaded)
     return (
       <Pressable
@@ -80,22 +88,10 @@ export function SelectionHelp({ anchor }: { anchor: AssistanceAnchor }) {
     );
   return (
     <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Translation placeholder. Expand grammar help"
-        accessibilityState={{ expanded }}
-        onPress={() => setExpanded((value) => !value)}
-        style={styles.action}
-      >
-        <Text style={styles.translation}>
-          {state.translation ?? 'translation'}
-        </Text>
-      </Pressable>
-      {expanded && (
-        <Text style={styles.note}>
-          Translation and grammar help are coming soon.
-          {mode === 'learning' ? ' Your attempt is not graded.' : ''}
-        </Text>
+      {isWord ? (
+        <WordLookup word={text} />
+      ) : (
+        <Text style={styles.note}>Sentence help is coming soon.</Text>
       )}
       {mode === 'learning' && (
         <Pressable

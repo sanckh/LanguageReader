@@ -59,7 +59,7 @@ export function SelectableParagraph({
   };
   const from = selection ? Math.min(selection.start, selection.end) : -1;
   const to = selection ? Math.max(selection.start, selection.end) : -1;
-  const bubbleWidth = Math.min(mode === 'learning' ? 260 : 160, measuredWidth);
+  const bubbleWidth = Math.min(mode === 'learning' ? 280 : 240, measuredWidth);
   return (
     <View
       ref={container}
@@ -129,6 +129,8 @@ export function SelectableParagraph({
         >
           <SelectionHelp
             key={`${mode}:${from}:${to}`}
+            text={tokens.slice(from, to + 1).join('')}
+            isWord={from === to}
             anchor={{
               section_id: sectionId,
               start_offset:
